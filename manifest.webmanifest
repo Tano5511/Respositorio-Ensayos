@@ -1,0 +1,20 @@
+{
+  "name": "Repertorio — Canciones y ensayos",
+  "short_name": "Repertorio",
+  "description": "Organiza el repertorio de tu iglesia: canciones con letras y acordes, ensayos y buscador con filtros.",
+  "start_url": "./",
+  "scope": "./",
+  "display": "standalone",
+  "orientation": "portrait-primary",
+  "lang": "es",
+  "background_color": "#0d1017",
+  "theme_color": "#0d1017",
+  "icons": [
+    {
+      "src": "assets/icon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    }
+  ]
+}
