@@ -41,6 +41,8 @@
     sparkle: '<path d="M12 3v6M12 15v6M3 12h6M15 12h6"/><path d="m6 6 3 3M15 15l3 3M18 6l-3 3M9 15l-3 3"/>',
     users: '<path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.9"/>',
     folder: '<path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2Z"/>',
+    share: '<circle cx="18" cy="5" r="3"/><circle cx="6" cy="12" r="3"/><circle cx="18" cy="19" r="3"/><path d="m8.6 10.6 6.8-4.2M8.6 13.4l6.8 4.2"/>',
+    link: '<path d="M10 13a5 5 0 0 0 7.5.5l2-2a5 5 0 0 0-7-7l-1.5 1.5"/><path d="M14 11a5 5 0 0 0-7.5-.5l-2 2a5 5 0 0 0 7 7L13 18"/>',
   };
 
   function icon(name, extraClass) {
@@ -207,7 +209,11 @@
 
   function readOnlyChip() {
     if (typeof window.Store === 'undefined' || window.Store.canEdit) return '';
-    return '<span class="chip accent" title="Perfil compartido en solo lectura">' + icon('eye') + ' Solo lectura</span>';
+    const reason = window.Store.readOnlyReason;
+    const title = reason === 'role' ? 'Tu rol es músico: solo lectura'
+      : reason === 'offline' ? 'Sin conexión: solo lectura'
+        : 'Perfil compartido en solo lectura';
+    return '<span class="chip accent" title="' + title + '">' + icon('eye') + ' Solo lectura</span>';
   }
 
   window.UI = {

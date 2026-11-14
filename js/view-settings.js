@@ -40,6 +40,11 @@
     const editable = Store.canEdit;
     const profile = Store.activeProfile;
     const profiles = Store.profileSummaries();
+    const auth = window.Auth && window.Auth.isEnabled ? window.Auth : null;
+    const account = auth && auth.user ? auth.user : null;
+    const church = auth && auth.church ? auth.church : null;
+    const canImport = auth ? (editable && auth.isAdmin) : editable;
+    const canUseDangerZone = auth ? (editable && auth.isAdmin) : editable;
     let bytes = 0;
     try { bytes = new Blob([Store.exportData()]).size; } catch (error) { bytes = 0; }
     const kb = Math.max(1, Math.round(bytes / 1024));
@@ -48,26 +53,58 @@
       + '<header class="page-head">'
       + '  <div><div class="eyebrow">' + UI.icon('settings') + ' Configuración</div>'
       + '  <h1>Ajustes</h1>'
-      + '  <p class="sub">Perfiles de iglesia, apariencia y respaldo de tus datos.</p></div>'
+      + '  <p class="sub">' + (auth ? 'Cuenta, apariencia y respaldo de tu iglesia.' : 'Perfiles de iglesia, apariencia y respaldo de tus datos.') + '</p></div>'
       + '</header>'
       + '<div class="settings-grid">'
-      + '  <section class="card settings-card profile-card">'
-      + '    <h2>Perfil de iglesia</h2>'
-      + '    <p class="desc">Cada iglesia guarda su propia biblioteca en este dispositivo. Cambia de perfil para trabajar con otra iglesia o comparte la tuya en modo solo lectura.</p>'
-      + (profile && profile.readOnly
-        ? '<div class="read-only-note">' + UI.icon('eye') + '<div><strong>Perfil de solo lectura</strong>'
-          + '<p class="tiny muted">' + (profile.sharedBy ? 'Compartido por ' + U.esc(profile.sharedBy) + '. ' : '')
-          + 'Puedes ver canciones y repertorios, pero no modificarlos. Cambia a tu propio perfil para editar.</p></div></div>'
+      + (account
+        ? '  <section class="card settings-card">'
+          + '    <h2>Cuenta</h2>'
+          + '    <p class="desc">Sesión iniciada con <strong>' + U.esc(account.email || '') + '</strong>.</p>'
+          + (church
+            ? '<div class="row wrap" style="gap:6px">'
+              + '<span class="chip accent">' + U.esc(church.name) + '</span>'
+              + '<span class="chip">' + U.esc(U.roleLabel(auth.role)) + '</span>'
+              + (Store.offline ? '<span class="chip">Sin conexión</span>' : '')
+              + '</div>'
+            : '')
+          + (Store.offline
+            ? '<div class="read-only-note">' + UI.icon('clock') + '<div><strong>Sin conexión</strong>'
+              + '<p class="tiny muted">Estás viendo los últimos datos guardados. Cuando vuelva la conexión se actualiza solo.</p></div></div>'
+            : '')
+          + '    <div class="row wrap" style="gap:8px;margin-top:16px">'
+          + (auth
+            ? '      <button type="button" class="btn primary" id="churchProfile">' + UI.icon('link') + 'Perfil de la iglesia</button>'
+            : '')
+          + (auth.isAdmin
+            ? '      <button type="button" class="btn" id="members">' + UI.icon('users') + 'Miembros</button>'
+            : '')
+          + (auth.memberships.length > 1
+            ? '      <button type="button" class="btn" id="switchChurch">' + UI.icon('users') + 'Cambiar de iglesia</button>'
+            : '')
+          + '      <button type="button" class="btn danger" id="signOut">' + UI.icon('x') + 'Cerrar sesión</button>'
+          + '    </div>'
+          + '    <p class="tiny muted" style="margin-top:10px">Tus canciones y repertorios se guardan en la nube de tu iglesia y se comparten con sus miembros.</p>'
+          + '  </section>'
         : '')
-      + '    <div class="profile-list">' + profiles.map((item) => profileRowHTML(item, profiles.length)).join('') + '</div>'
-      + '    <div class="row wrap" style="gap:8px;margin-top:14px">'
-      + '      <button type="button" class="btn primary" id="newProfile">' + UI.icon('plus') + 'Nueva iglesia</button>'
-      + '      <button type="button" class="btn" id="exportProfile">' + UI.icon('download') + 'Exportar este perfil</button>'
-      + '      <button type="button" class="btn" id="importProfile">' + UI.icon('upload') + 'Importar perfil compartido</button>'
-      + '      <input type="file" id="importProfileFile" accept="application/json,.json" class="hidden">'
-      + '    </div>'
-      + '    <p class="tiny muted" style="margin-top:10px">Al exportar se descarga un archivo con las canciones y repertorios de este perfil. La otra iglesia lo importa y queda en solo lectura.</p>'
-      + '  </section>'
+      + (auth
+        ? ''
+        : '  <section class="card settings-card profile-card">'
+          + '    <h2>Perfil de iglesia</h2>'
+          + '    <p class="desc">Cada iglesia guarda su propia biblioteca en este dispositivo. Cambia de perfil para trabajar con otra iglesia o comparte la tuya en modo solo lectura.</p>'
+          + (profile && profile.readOnly
+            ? '<div class="read-only-note">' + UI.icon('eye') + '<div><strong>Perfil de solo lectura</strong>'
+              + '<p class="tiny muted">' + (profile.sharedBy ? 'Compartido por ' + U.esc(profile.sharedBy) + '. ' : '')
+              + 'Puedes ver canciones y repertorios, pero no modificarlos. Cambia a tu propio perfil para editar.</p></div></div>'
+            : '')
+          + '    <div class="profile-list">' + profiles.map((item) => profileRowHTML(item, profiles.length)).join('') + '</div>'
+          + '    <div class="row wrap" style="gap:8px;margin-top:14px">'
+          + '      <button type="button" class="btn primary" id="newProfile">' + UI.icon('plus') + 'Nueva iglesia</button>'
+          + '      <button type="button" class="btn" id="exportProfile">' + UI.icon('download') + 'Exportar este perfil</button>'
+          + '      <button type="button" class="btn" id="importProfile">' + UI.icon('upload') + 'Importar perfil compartido</button>'
+          + '      <input type="file" id="importProfileFile" accept="application/json,.json" class="hidden">'
+          + '    </div>'
+          + '    <p class="tiny muted" style="margin-top:10px">Al exportar se descarga un archivo con las canciones y repertorios de este perfil. La otra iglesia lo importa y queda en solo lectura.</p>'
+          + '  </section>')
       + '  <section class="card settings-card">'
       + '    <h2>Apariencia</h2><p class="desc">Elige cómo se ve la aplicación en este dispositivo.</p>'
       + '    <div class="setting-row"><div><div class="label">Tema</div><p class="desc">Claro u oscuro.</p></div>'
@@ -79,24 +116,29 @@
       + '      <div class="row" style="gap:8px;min-width:150px"><input type="range" id="fontRange" min="13" max="26" step="1" value="' + (Number(settings.fontSize) || 17) + '"><span class="tiny mono nowrap" id="fontValue">' + (Number(settings.fontSize) || 17) + ' px</span></div></div>'
       + '    <div class="setting-row"><div><div class="label">Mostrar acordes</div><p class="desc">Al abrir una canción, mostrar acordes sobre la letra.</p></div>'
       + '      <label class="row" style="gap:6px"><input type="checkbox" id="showChords"' + (settings.showChords !== false ? ' checked' : '') + '></label></div>'
-      + '    <div class="setting-row"><div><div class="label">Nombre de la iglesia</div><p class="desc">Aparece en la barra lateral y en el archivo compartido.</p></div>'
-      + '      <input type="text" id="churchName" value="' + U.esc(settings.churchName || '') + '" placeholder="Mi iglesia" style="max-width:200px"' + (editable ? '' : ' disabled') + '></div>'
+      + (auth ? '' : '    <div class="setting-row"><div><div class="label">Nombre de la iglesia</div><p class="desc">Aparece en la barra lateral y en el archivo compartido.</p></div>'
+        + '      <input type="text" id="churchName" value="' + U.esc(settings.churchName || '') + '" placeholder="Mi iglesia" style="max-width:200px"' + (editable ? '' : ' disabled') + '></div>')
       + '  </section>'
       + '  <section class="card settings-card">'
-      + '    <h2>Respaldo de datos</h2><p class="desc">Todo se guarda en este navegador. Descarga una copia para no perder nada.</p>'
+      + '    <h2>Respaldo de datos</h2><p class="desc">' + (auth
+        ? 'Descarga una copia de las canciones y repertorios de tu iglesia.'
+        : 'Todo se guarda en este navegador. Descarga una copia para no perder nada.') + '</p>'
       + '    <div class="row wrap" style="gap:8px">'
       + '      <button type="button" class="btn" id="exportData">' + UI.icon('download') + 'Exportar respaldo</button>'
-      + (editable ? '      <button type="button" class="btn" id="importData">' + UI.icon('upload') + 'Importar</button>' : '')
+      + (canImport ? '      <button type="button" class="btn" id="importData">' + UI.icon('upload') + 'Importar</button>' : '')
       + '      <input type="file" id="importFile" accept="application/json,.json" class="hidden">'
       + '    </div>'
-      + '    <p class="tiny muted" style="margin-top:12px">' + (Store.storageOk ? 'Almacenamiento local disponible' : 'Almacenamiento no disponible') + ' · ' + stats.songs + ' canciones · ' + stats.setlists + ' repertorios · aprox. ' + kb + ' KB</p>'
-      + (editable
+      + '    <p class="tiny muted" style="margin-top:12px">' + (auth
+        ? (Store.offline ? 'Sin conexión · copia guardada en este dispositivo' : 'Sincronizado con tu iglesia')
+        : (Store.storageOk ? 'Almacenamiento local disponible' : 'Almacenamiento no disponible'))
+        + ' · ' + stats.songs + ' canciones · ' + stats.setlists + ' repertorios · aprox. ' + kb + ' KB</p>'
+      + (canUseDangerZone && !auth
         ? '    <hr class="divider">'
           + '    <div class="row wrap" style="gap:8px">'
           + '      <button type="button" class="btn ghost" id="restoreDemo">' + UI.icon('refresh') + 'Restaurar datos de ejemplo</button>'
           + '    </div>'
           + '    <p class="tiny muted" style="margin-top:8px">Reemplaza todo por las canciones y repertorios de demostración.</p>'
-        : '    <p class="tiny muted" style="margin-top:8px">Importar o restaurar datos no está disponible en un perfil de solo lectura.</p>')
+        : '')
       + '  </section>'
       + '  <section class="card settings-card">'
       + '    <h2>Cómo escribir acordes</h2><p class="desc">El formato es simple y flexible.</p>'
@@ -111,18 +153,76 @@
       + '        <p class="small muted">Al abrir una canción elige el tono en el selector o usa − / +. Los acordes se recalculan solos.</p></div>'
       + '    </div>'
       + '  </section>'
-      + (editable
+      + (canUseDangerZone
         ? '  <section class="card settings-card danger-zone">'
           + '    <h2>Zona de riesgo</h2><p class="desc">Estas acciones no se pueden deshacer.</p>'
+          + (auth ? '<p class="tiny muted" style="margin-bottom:12px">Se borrarán para todos los miembros de la iglesia.</p>' : '')
           + '    <button type="button" class="btn danger" id="clearAll">' + UI.icon('trash') + 'Borrar todas las canciones y repertorios</button>'
           + '  </section>'
         : '')
       + '</div>';
 
+    /* ---------- Cuenta ---------- */
+
+    const signOutButton = U.$('#signOut', container);
+    if (signOutButton) {
+      signOutButton.addEventListener('click', async () => {
+        const confirmed = await UI.confirm({
+          title: 'Cerrar sesión',
+          message: '¿Querés salir de tu cuenta en este dispositivo? Los datos guardados localmente no se borran.',
+          confirmLabel: 'Cerrar sesión',
+          danger: true,
+        });
+        if (!confirmed) return;
+        await window.Auth.signOut();
+      });
+    }
+
+    const membersButton = U.$('#members', container);
+    if (membersButton) {
+      membersButton.addEventListener('click', () => {
+        window.location.hash = '#/miembros';
+      });
+    }
+
+    const churchProfileButton = U.$('#churchProfile', container);
+    if (churchProfileButton) {
+      churchProfileButton.addEventListener('click', () => {
+        window.location.hash = '#/iglesia';
+      });
+    }
+
+    const switchChurchButton = U.$('#switchChurch', container);
+    if (switchChurchButton) {
+      switchChurchButton.addEventListener('click', () => {
+        const memberships = window.Auth.memberships;
+        UI.modal({
+          title: 'Cambiar de iglesia',
+          subtitle: 'Elegí con cuál querés trabajar ahora.',
+          body: '<div class="auth-choices">' + memberships.map((item) =>
+            '<button type="button" class="auth-choice" data-switch-church="' + U.esc(item.church.id) + '">'
+            + '<span>' + U.esc(item.church.name) + '</span>'
+            + '<span class="chip">' + U.esc(U.roleLabel(item.role)) + '</span>'
+            + '</button>').join('') + '</div>',
+          actions: [{ label: 'Cancelar', class: 'ghost' }],
+          onMount: (box) => {
+            box.querySelectorAll('[data-switch-church]').forEach((button) => {
+              button.addEventListener('click', () => {
+                const target = button.dataset.switchChurch;
+                UI.closeModal();
+                window.Auth.selectChurch(target);
+                UI.toast('Iglesia cambiada');
+              });
+            });
+          },
+        });
+      });
+    }
+
     /* ---------- Perfiles ---------- */
 
     const profileCard = U.$('.profile-card', container);
-    profileCard.addEventListener('click', async (event) => {
+    if (profileCard) profileCard.addEventListener('click', async (event) => {
       const switchButton = event.target.closest('[data-switch]');
       if (switchButton) {
         if (Store.switchProfile(switchButton.dataset.switch)) {
@@ -169,7 +269,8 @@
       }
     });
 
-    U.$('#newProfile', container).addEventListener('click', () => {
+    const newProfileButton = U.$('#newProfile', container);
+    if (newProfileButton) newProfileButton.addEventListener('click', () => {
       openProfileNameDialog({
         title: 'Nueva iglesia',
         subtitle: 'Se crea un perfil vacío con su propia biblioteca.',
@@ -183,38 +284,44 @@
       });
     });
 
-    U.$('#exportProfile', container).addEventListener('click', () => {
-      const name = (Store.activeProfile && Store.activeProfile.name) || 'iglesia';
+    const exportProfileButton = U.$('#exportProfile', container);
+    if (exportProfileButton) exportProfileButton.addEventListener('click', () => {
+      const name = (auth && auth.church && auth.church.name)
+        || (Store.activeProfile && Store.activeProfile.name)
+        || 'iglesia';
       U.download('perfil-' + slug(name) + '-' + U.todayISO() + '.json', Store.exportProfile());
       UI.toast('Perfil exportado');
     });
 
     const profileFileInput = U.$('#importProfileFile', container);
-    U.$('#importProfile', container).addEventListener('click', () => profileFileInput.click());
-    profileFileInput.addEventListener('change', () => {
-      const file = profileFileInput.files && profileFileInput.files[0];
-      if (!file) return;
-      const reader = new FileReader();
-      reader.onload = () => {
-        try {
-          const data = JSON.parse(String(reader.result || '{}'));
-          if (!data || !Array.isArray(data.songs)) throw new Error('Formato inválido');
-          if (data.kind === 'church-profile') {
-            importSharedDialog(data);
-          } else {
-            importDialog(data, container);
+    const importProfileButton = U.$('#importProfile', container);
+    if (importProfileButton && profileFileInput) {
+      importProfileButton.addEventListener('click', () => profileFileInput.click());
+      profileFileInput.addEventListener('change', () => {
+        const file = profileFileInput.files && profileFileInput.files[0];
+        if (!file) return;
+        const reader = new FileReader();
+        reader.onload = () => {
+          try {
+            const data = JSON.parse(String(reader.result || '{}'));
+            if (!data || !Array.isArray(data.songs)) throw new Error('Formato inválido');
+            if (data.kind === 'church-profile') {
+              importSharedDialog(data);
+            } else {
+              importDialog(data, container);
+            }
+          } catch (error) {
+            UI.toast('No se pudo leer el archivo: formato inválido', 'error');
           }
-        } catch (error) {
-          UI.toast('No se pudo leer el archivo: formato inválido', 'error');
-        }
-        profileFileInput.value = '';
-      };
-      reader.onerror = () => {
-        UI.toast('No se pudo leer el archivo', 'error');
-        profileFileInput.value = '';
-      };
-      reader.readAsText(file);
-    });
+          profileFileInput.value = '';
+        };
+        reader.onerror = () => {
+          UI.toast('No se pudo leer el archivo', 'error');
+          profileFileInput.value = '';
+        };
+        reader.readAsText(file);
+      });
+    }
 
     /* ---------- Apariencia ---------- */
 
@@ -358,6 +465,36 @@
     const listCount = Array.isArray(data.setlists) ? data.setlists.length : 0;
     const name = String(data.profileName || (data.settings && data.settings.churchName) || 'Perfil compartido').trim() || 'Perfil compartido';
     const sharedBy = String(data.sharedBy || '').trim();
+    const cloud = !!(window.Auth && window.Auth.isEnabled && window.Auth.user && window.Auth.church);
+
+    if (cloud) {
+      UI.modal({
+        title: 'Importar repertorio',
+        subtitle: name,
+        body: '<p class="small">Se agregarán ' + songCount + ' ' + U.plural(songCount, 'canción', 'canciones')
+          + ' y ' + listCount + ' ' + U.plural(listCount, 'repertorio', 'repertorios') + ' a tu iglesia.'
+          + (sharedBy ? '<br>Compartido por ' + U.esc(sharedBy) : '') + '</p>'
+          + '<p class="tiny muted">Las canciones se agregan al final; no se borra nada de lo que ya tenés.</p>',
+        actions: [
+          { label: 'Cancelar', class: 'ghost' },
+          {
+            label: 'Importar',
+            class: 'primary',
+            onClick: () => {
+              try {
+                const result = Store.importData(data, 'merge');
+                UI.toast(result.songs + ' canciones importadas');
+                refreshApp();
+              } catch (error) {
+                UI.toast('No se pudo importar el perfil', 'error');
+              }
+            },
+          },
+        ],
+      });
+      return;
+    }
+
     UI.modal({
       title: 'Importar perfil compartido',
       subtitle: name,

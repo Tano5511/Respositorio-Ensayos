@@ -79,7 +79,7 @@
 
   function addToSetlistModal(song) {
     if (!Store.canEdit) {
-      UI.toast('Este perfil es solo lectura', 'error');
+      UI.toast(Store.readOnlyMessage, 'error');
       return null;
     }
     const lists = Store.state.setlists

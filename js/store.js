@@ -4,6 +4,9 @@
 
   const DB_KEY = 'repertorio.v1';
   const PROFILES_KEY = 'repertorio.profiles.v1';
+  const SETTINGS_KEY = 'repertorio.settings.v1';
+  const CLOUD_CACHE_PREFIX = 'repertorio.cloud.v1.';
+  const IMPORT_ASKED_PREFIX = 'repertorio.importAsked.v1.';
   const CATEGORIES = ['Alabanza', 'Adoración', 'Comunión', 'Entrada', 'Salida', 'Himno', 'Especial', 'Navidad', 'Infantil'];
 
   const DEFAULT_SETTINGS = {
@@ -292,6 +295,8 @@
   let storageOk = true;
   let profiles = [];
   let activeProfileId = '';
+  let offline = false;
+  const writeQueues = new Map();
 
   function profileById(id) {
     return profiles.find((profile) => profile.id === id) || null;
@@ -301,15 +306,558 @@
     return profileById(activeProfileId) || profiles[0] || null;
   }
 
+  function hasWriteRole() {
+    const Auth = window.Auth;
+    return !!(Auth && (Auth.isAdmin || Auth.isEditor));
+  }
+
   function canEdit() {
+    if (cloudEnabled()) return hasWriteRole() && navigator.onLine !== false;
     const profile = activeProfile();
     return !profile || !profile.readOnly;
   }
 
+  function readOnlyReason() {
+    if (canEdit()) return '';
+    if (!cloudEnabled()) return 'profile';
+    if (!hasWriteRole()) return 'role';
+    return 'offline';
+  }
+
+  function readOnlyMessage() {
+    const reason = readOnlyReason();
+    if (reason === 'role') return 'Solo los administradores y editores pueden editar';
+    if (reason === 'offline') return 'Sin conexión: no se pueden guardar cambios';
+    return 'Este perfil es solo lectura';
+  }
+
+  function canWriteNow() {
+    if (!cloudEnabled()) return canEdit();
+    if (!hasWriteRole()) {
+      if (window.UI && window.UI.toast) window.UI.toast(readOnlyMessage(), 'error');
+      return false;
+    }
+    if (navigator.onLine === false) {
+      if (window.UI && window.UI.toast) window.UI.toast(readOnlyMessage(), 'error');
+      return false;
+    }
+    return true;
+  }
+
   function ensureEditable() {
-    if (canEdit()) return true;
-    if (window.UI && window.UI.toast) window.UI.toast('Este perfil es solo lectura', 'error');
+    if (canWriteNow()) return true;
+    if (window.UI && window.UI.toast && !cloudEnabled()) window.UI.toast('Este perfil es solo lectura', 'error');
     return false;
+  }
+
+  /* Acciones delicadas: en la nube sólo las puede hacer un administrador. */
+  function ensureAdmin(label) {
+    if (!cloudEnabled()) return ensureEditable();
+    if (!window.Auth || !window.Auth.isAdmin) {
+      if (window.UI && window.UI.toast) {
+        window.UI.toast('Solo un administrador puede ' + (label || 'hacer esta acción'), 'error');
+      }
+      return false;
+    }
+    if (navigator.onLine === false) {
+      if (window.UI && window.UI.toast) window.UI.toast(readOnlyMessage(), 'error');
+      return false;
+    }
+    return true;
+  }
+
+  /* ---------------- Nube (Supabase) ----------------
+     En modo nube el estado en memoria es la fuente para dibujar la interfaz.
+     Supabase es la fuente de verdad: cada cambio se envía en segundo plano y,
+     si falla, se avisa y se vuelve a cargar lo que hay en el servidor.
+     localStorage sólo guarda una copia para poder leer sin conexión. */
+
+  function cloudEnabled() {
+    const Auth = window.Auth;
+    return !!(Auth && Auth.isEnabled && Auth.user && Auth.church);
+  }
+
+  function authClient() {
+    return window.Auth ? window.Auth.client : null;
+  }
+
+  function activeChurchId() {
+    const Auth = window.Auth;
+    return Auth && Auth.church ? Auth.church.id : '';
+  }
+
+  function uuid() {
+    if (window.crypto && typeof window.crypto.randomUUID === 'function') {
+      return window.crypto.randomUUID();
+    }
+    const bytes = new Uint8Array(16);
+    window.crypto.getRandomValues(bytes);
+    bytes[6] = (bytes[6] & 0x0f) | 0x40;
+    bytes[8] = (bytes[8] & 0x3f) | 0x80;
+    const hex = Array.from(bytes, (byte) => byte.toString(16).padStart(2, '0')).join('');
+    return hex.slice(0, 8) + '-' + hex.slice(8, 12) + '-' + hex.slice(12, 16) + '-'
+      + hex.slice(16, 20) + '-' + hex.slice(20);
+  }
+
+  function isUuid(value) {
+    return /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(String(value || ''));
+  }
+
+  function toInt(value, min, max) {
+    const number = Math.round(Number(value) || 0);
+    if (number < min) return min;
+    if (max !== undefined && number > max) return max;
+    return number;
+  }
+
+  function plainLyrics(content) {
+    if (!content || !window.Chords) return '';
+    return window.Chords.parseSongContent(content).map((block) => {
+      if (block.type === 'pair') return block.lyric || '';
+      if (block.type === 'lyric') return block.text || '';
+      if (block.type === 'section') return '[' + block.label + ']';
+      return '';
+    }).join('\n').replace(/\n{3,}/g, '\n\n').trim();
+  }
+
+  function toSongRow(song, churchId) {
+    const content = String(song.content || '');
+    return {
+      id: song.id,
+      church_id: churchId,
+      title: String(song.title || '').trim().slice(0, 200),
+      key: String(song.key || ''),
+      lyrics: song.lyrics !== undefined ? String(song.lyrics || '') : plainLyrics(content),
+      chords: content,
+      notes: String(song.notes || ''),
+      author: String(song.author || ''),
+      bpm: toInt(song.bpm, 0, 400),
+      duration: toInt(song.duration, 0),
+      category: String(song.category || ''),
+      difficulty: String(song.difficulty || ''),
+      tags: Array.isArray(song.tags) ? song.tags.map((tag) => String(tag).trim()).filter(Boolean) : [],
+      favorite: !!song.favorite,
+      play_count: toInt(song.playCount, 0),
+      last_played: song.lastPlayed || null,
+    };
+  }
+
+  function fromSongRow(row) {
+    return {
+      id: row.id,
+      title: row.title || '',
+      author: row.author || '',
+      key: row.key || '',
+      capo: 0,
+      bpm: Number(row.bpm) || 0,
+      duration: Number(row.duration) || 0,
+      category: row.category || '',
+      difficulty: row.difficulty || '',
+      tags: Array.isArray(row.tags) ? row.tags.slice() : [],
+      notes: row.notes || '',
+      favorite: !!row.favorite,
+      playCount: Number(row.play_count) || 0,
+      lastPlayed: row.last_played || '',
+      content: row.chords || '',
+      lyrics: row.lyrics || '',
+      createdAt: row.created_at || '',
+      updatedAt: row.updated_at || '',
+    };
+  }
+
+  function normalizeItem(item) {
+    const capo = item.capoOverride !== undefined ? item.capoOverride
+      : (item.capo_override !== undefined && item.capo_override !== null ? String(item.capo_override) : '');
+    return {
+      id: item.id || window.U.uid('item'),
+      songId: item.songId || item.song_id || '',
+      keyOverride: item.keyOverride !== undefined ? item.keyOverride : (item.key_override || ''),
+      capoOverride: capo,
+      notes: item.notes || '',
+      done: !!item.done,
+    };
+  }
+
+  function toSetlistRow(list, churchId) {
+    return {
+      id: list.id,
+      church_id: churchId,
+      name: String(list.name || '').trim().slice(0, 160),
+      date: /^\d{4}-\d{2}-\d{2}$/.test(String(list.date || '')) ? list.date : window.U.todayISO(),
+      notes: String(list.notes || ''),
+      service: String(list.service || ''),
+      items: (Array.isArray(list.items) ? list.items : []).map((item) => ({
+        id: item.id,
+        song_id: item.songId || null,
+        key_override: item.keyOverride || '',
+        capo_override: item.capoOverride === '' || item.capoOverride === null || item.capoOverride === undefined
+          ? null
+          : toInt(item.capoOverride, 0, 11),
+        notes: item.notes || '',
+        done: !!item.done,
+      })),
+    };
+  }
+
+  function fromSetlistRow(row) {
+    return {
+      id: row.id,
+      name: row.name || '',
+      date: row.date || '',
+      service: row.service || '',
+      notes: row.notes || '',
+      items: (Array.isArray(row.items) ? row.items : []).map(normalizeItem),
+      createdAt: row.created_at || '',
+      updatedAt: row.updated_at || '',
+    };
+  }
+
+  function queueOp(key, task) {
+    const previous = writeQueues.get(key) || Promise.resolve();
+    const next = previous.then(task, task);
+    writeQueues.set(key, next.catch(() => {}));
+    return next;
+  }
+
+  function writeErrorMessage(error) {
+    if (window.Auth && typeof window.Auth.errorText === 'function') {
+      return window.Auth.errorText(error);
+    }
+    return (error && (error.message || error.error_description)) || '';
+  }
+
+  function handleWriteError(error, label) {
+    console.error('[store] No se pudo guardar ' + (label || 'el cambio'), error);
+    const message = writeErrorMessage(error);
+    if (window.UI && window.UI.toast) {
+      window.UI.toast(message || ('No se pudo guardar ' + (label || 'el cambio') + '.'), 'error');
+    }
+    if (!navigator.onLine) setOffline(true);
+    scheduleResync();
+  }
+
+  function setOffline(value) {
+    offline = !!value;
+    const node = document.getElementById('offlineNote');
+    if (node) {
+      node.hidden = !offline;
+      if (offline) node.textContent = 'Sin conexión · mostrando los últimos datos guardados';
+    }
+    const storageNote = document.getElementById('storageNote');
+    if (storageNote && window.Auth && window.Auth.isEnabled) {
+      storageNote.textContent = offline
+        ? 'Sin conexión · mostrando datos guardados.'
+        : 'Tus datos se sincronizan con tu iglesia.';
+    }
+  }
+
+  let resyncTimer = 0;
+  function scheduleResync() {
+    if (resyncTimer) return;
+    resyncTimer = window.setTimeout(() => {
+      resyncTimer = 0;
+      loadCloud().then(() => {
+        notify();
+        document.dispatchEvent(new CustomEvent('repertorio:refresh'));
+      });
+    }, 700);
+  }
+
+  function writeSong(song) {
+    if (!cloudEnabled()) return Promise.resolve();
+    const churchId = activeChurchId();
+    const row = toSongRow(song, churchId);
+    return queueOp('song:' + song.id, async () => {
+      const { error } = await authClient().from('songs').upsert(row, { onConflict: 'id' });
+      if (error) throw error;
+    }).catch((error) => handleWriteError(error, 'la canción'));
+  }
+
+  function writeSongFields(id, fields) {
+    if (!cloudEnabled()) return Promise.resolve();
+    const churchId = activeChurchId();
+    return queueOp('song:' + id, async () => {
+      const { error } = await authClient().from('songs').update(fields).eq('id', id).eq('church_id', churchId);
+      if (error) throw error;
+    }).catch((error) => handleWriteError(error, 'la canción'));
+  }
+
+  function deleteSongRow(id) {
+    if (!cloudEnabled()) return Promise.resolve();
+    const churchId = activeChurchId();
+    return queueOp('song:' + id, async () => {
+      const { error } = await authClient().from('songs').delete().eq('id', id).eq('church_id', churchId);
+      if (error) throw error;
+    }).catch((error) => handleWriteError(error, 'la canción'));
+  }
+
+  function writeSetlist(list) {
+    if (!cloudEnabled()) return Promise.resolve();
+    const churchId = activeChurchId();
+    const row = toSetlistRow(list, churchId);
+    return queueOp('setlist:' + list.id, async () => {
+      const { error } = await authClient().from('setlists').upsert(row, { onConflict: 'id' });
+      if (error) throw error;
+    }).catch((error) => handleWriteError(error, 'el repertorio'));
+  }
+
+  function deleteSetlistRow(id) {
+    if (!cloudEnabled()) return Promise.resolve();
+    const churchId = activeChurchId();
+    return queueOp('setlist:' + id, async () => {
+      const { error } = await authClient().from('setlists').delete().eq('id', id).eq('church_id', churchId);
+      if (error) throw error;
+    }).catch((error) => handleWriteError(error, 'el repertorio'));
+  }
+
+  async function insertRows(table, rows) {
+    const chunkSize = 100;
+    for (let index = 0; index < rows.length; index += chunkSize) {
+      const chunk = rows.slice(index, index + chunkSize);
+      const { error } = await authClient().from(table).insert(chunk);
+      if (error) throw error;
+    }
+  }
+
+  function cacheKey(churchId) {
+    return CLOUD_CACHE_PREFIX + churchId;
+  }
+
+  function writeCloudCache() {
+    if (!cloudEnabled()) return;
+    const churchId = activeChurchId();
+    try {
+      window.localStorage.setItem(cacheKey(churchId), JSON.stringify({
+        version: 1,
+        churchId: churchId,
+        savedAt: new Date().toISOString(),
+        songs: state.songs,
+        setlists: state.setlists,
+      }));
+      storageOk = true;
+    } catch (error) {
+      storageOk = false;
+    }
+  }
+
+  function readCloudCache(churchId) {
+    try {
+      const raw = window.localStorage.getItem(cacheKey(churchId));
+      if (!raw) return null;
+      const parsed = JSON.parse(raw);
+      if (!parsed || !Array.isArray(parsed.songs) || !Array.isArray(parsed.setlists)) return null;
+      return parsed;
+    } catch (error) {
+      return null;
+    }
+  }
+
+  function readLocalSettings() {
+    try {
+      const raw = window.localStorage.getItem(SETTINGS_KEY);
+      if (!raw) return null;
+      const parsed = JSON.parse(raw);
+      return parsed && typeof parsed === 'object' ? parsed : null;
+    } catch (error) {
+      return null;
+    }
+  }
+
+  function writeLocalSettings() {
+    try {
+      window.localStorage.setItem(SETTINGS_KEY, JSON.stringify(state.settings));
+    } catch (error) {
+      storageOk = false;
+    }
+  }
+
+  async function loadCloud() {
+    if (!cloudEnabled()) return state;
+    const Auth = window.Auth;
+    const churchId = activeChurchId();
+    const savedSettings = readLocalSettings();
+    if (savedSettings) state.settings = Object.assign({}, state.settings, savedSettings);
+    if (Auth.church && Auth.church.name) state.settings.churchName = Auth.church.name;
+
+    const cached = readCloudCache(churchId);
+    applyData({
+      songs: cached ? cached.songs : [],
+      setlists: cached ? cached.setlists : [],
+      settings: state.settings,
+    });
+
+    try {
+      const results = await Promise.all([
+        authClient().from('songs').select('*').eq('church_id', churchId).order('updated_at', { ascending: false }),
+        authClient().from('setlists').select('*').eq('church_id', churchId).order('date', { ascending: false }),
+      ]);
+      if (results[0].error) throw results[0].error;
+      if (results[1].error) throw results[1].error;
+
+      applyData({
+        songs: (results[0].data || []).map(fromSongRow),
+        setlists: (results[1].data || []).map(fromSetlistRow),
+        settings: state.settings,
+      });
+      if (Auth.church && Auth.church.name) state.settings.churchName = Auth.church.name;
+      writeCloudCache();
+      writeLocalSettings();
+      setOffline(false);
+    } catch (error) {
+      console.error('[store] No se pudieron cargar los datos de la iglesia', error);
+      if (!cached) {
+        applyData({ songs: [], setlists: [], settings: state.settings });
+      }
+      setOffline(true);
+    }
+
+    return state;
+  }
+
+  /* ---------------- Importar la biblioteca local la primera vez ---------------- */
+
+  function importAskedKey() {
+    const userId = window.Auth && window.Auth.user ? window.Auth.user.id : 'anon';
+    return IMPORT_ASKED_PREFIX + userId + '.' + activeChurchId();
+  }
+
+  function importAsked() {
+    try { return window.localStorage.getItem(importAskedKey()) || ''; } catch (error) { return ''; }
+  }
+
+  function markImportAsked(value) {
+    try { window.localStorage.setItem(importAskedKey(), value); } catch (error) { /* sin almacenamiento */ }
+  }
+
+  function isDemoLibrary(songs) {
+    return Array.isArray(songs) && songs.length > 0
+      && songs.every((song) => /^song_seed_/.test(String((song && song.id) || '')));
+  }
+
+  function localSnapshot() {
+    const stored = readProfiles();
+    if (stored) {
+      const active = stored.profiles.find((profile) => profile.id === stored.activeId) || stored.profiles[0];
+      const data = (active && active.data) || {};
+      const songs = Array.isArray(data.songs) ? data.songs : [];
+      return {
+        name: (active && active.name) || 'Mi iglesia',
+        songs: songs,
+        setlists: Array.isArray(data.setlists) ? data.setlists : [],
+        demo: isDemoLibrary(songs),
+      };
+    }
+    const legacy = readStorage();
+    if (legacy && Array.isArray(legacy.songs)) {
+      return {
+        name: (legacy.settings && legacy.settings.churchName) || 'Mi iglesia',
+        songs: legacy.songs,
+        setlists: Array.isArray(legacy.setlists) ? legacy.setlists : [],
+        demo: isDemoLibrary(legacy.songs),
+      };
+    }
+    return null;
+  }
+
+  function pendingImport() {
+    if (!cloudEnabled() || !window.Auth.isAdmin) return null;
+    if (state.songs.length || state.setlists.length) return null;
+    if (importAsked()) return null;
+    const snapshot = localSnapshot();
+    if (!snapshot || snapshot.demo) return null;
+    if (!snapshot.songs.length && !snapshot.setlists.length) return null;
+    return snapshot;
+  }
+
+  function prepareLocalSongs(rawSongs) {
+    const map = new Map();
+    const songs = [];
+    (rawSongs || []).forEach((raw) => {
+      if (!raw) return;
+      const title = String(raw.title || '').trim();
+      if (!title) return;
+      const song = {
+        id: uuid(),
+        title: title,
+        author: raw.author || '',
+        key: raw.key || '',
+        capo: toInt(raw.capo, 0, 11),
+        bpm: toInt(raw.bpm, 0, 400),
+        duration: toInt(raw.duration, 0),
+        category: raw.category || '',
+        difficulty: raw.difficulty || '',
+        tags: Array.isArray(raw.tags) ? raw.tags.slice() : [],
+        notes: raw.notes || '',
+        favorite: !!raw.favorite,
+        playCount: toInt(raw.playCount, 0),
+        lastPlayed: raw.lastPlayed || '',
+        content: raw.content || '',
+        createdAt: raw.createdAt || new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+      };
+      if (raw.id) map.set(raw.id, song.id);
+      songs.push(song);
+    });
+    return { songs: songs, map: map };
+  }
+
+  function prepareLocalSetlists(rawSetlists, songIdMap) {
+    return (rawSetlists || []).filter(Boolean).map((raw) => {
+      const items = (Array.isArray(raw.items) ? raw.items : []).map((item) => {
+        const oldSongId = item.songId || item.song_id || '';
+        const songId = songIdMap.get(oldSongId) || (isUuid(oldSongId) ? oldSongId : '');
+        if (!songId) return null;
+        return {
+          id: item.id || window.U.uid('item'),
+          songId: songId,
+          keyOverride: item.keyOverride !== undefined ? item.keyOverride : (item.key_override || ''),
+          capoOverride: item.capoOverride !== undefined && item.capoOverride !== null
+            ? String(item.capoOverride)
+            : (item.capo_override === undefined || item.capo_override === null ? '' : String(item.capo_override)),
+          notes: item.notes || '',
+          done: !!item.done,
+        };
+      }).filter(Boolean);
+      return {
+        id: uuid(),
+        name: String(raw.name || 'Repertorio').trim().slice(0, 160) || 'Repertorio',
+        date: /^\d{4}-\d{2}-\d{2}$/.test(String(raw.date || '')) ? raw.date : window.U.todayISO(),
+        service: raw.service || '',
+        notes: raw.notes || '',
+        items: items,
+      };
+    });
+  }
+
+  async function importLocal() {
+    if (!cloudEnabled() || !window.Auth.isAdmin) return { songs: 0, setlists: 0 };
+    const snapshot = pendingImport();
+    if (!snapshot) return { songs: 0, setlists: 0 };
+
+    const prepared = prepareLocalSongs(snapshot.songs);
+    const setlists = prepareLocalSetlists(snapshot.setlists, prepared.map);
+    const churchId = activeChurchId();
+
+    state.songs = prepared.songs.concat(state.songs);
+    state.setlists = setlists.concat(state.setlists);
+    writeCloudCache();
+    notify();
+
+    try {
+      await insertRows('songs', prepared.songs.map((song) => toSongRow(song, churchId)));
+      await insertRows('setlists', setlists.map((list) => toSetlistRow(list, churchId)));
+      markImportAsked('done');
+      await loadCloud();
+      notify();
+      return { songs: prepared.songs.length, setlists: setlists.length };
+    } catch (error) {
+      handleWriteError(error, 'la importación');
+      return { songs: 0, setlists: 0, error: writeErrorMessage(error) };
+    }
+  }
+
+  function skipImport() {
+    markImportAsked('skipped');
   }
 
   function readStorage() {
@@ -372,6 +920,11 @@
   }
 
   function persist() {
+    if (cloudEnabled()) {
+      writeLocalSettings();
+      writeCloudCache();
+      return;
+    }
     const profile = activeProfile();
     if (profile) {
       profile.data = { songs: state.songs, setlists: state.setlists, settings: state.settings };
@@ -466,6 +1019,27 @@
     };
   }
 
+  function clearSession() {
+    if (!window.Auth || !window.Auth.isEnabled) return;
+    state.songs = [];
+    state.setlists = [];
+    notify();
+  }
+
+  window.addEventListener('offline', () => {
+    if (cloudEnabled()) setOffline(true);
+  });
+
+  window.addEventListener('online', () => {
+    if (!cloudEnabled()) return;
+    setOffline(false);
+    if (window.UI && window.UI.toast) window.UI.toast('Conexión restablecida');
+    loadCloud().then(() => {
+      notify();
+      document.dispatchEvent(new CustomEvent('repertorio:refresh'));
+    });
+  });
+
   /* ---------- Canciones ---------- */
 
   function getSong(id) {
@@ -492,7 +1066,7 @@
         lastPlayed: '',
         createdAt: timestamp,
       }, payload);
-      song.id = window.U.uid('song');
+      song.id = cloudEnabled() ? uuid() : window.U.uid('song');
       song.updatedAt = timestamp;
       state.songs.unshift(song);
     }
@@ -501,16 +1075,27 @@
     song.bpm = Number(song.bpm) || 0;
     song.duration = Number(song.duration) || 0;
     commit();
+    writeSong(song);
     return song;
   }
 
   function deleteSong(id) {
     if (!ensureEditable()) return false;
+    const affected = [];
     state.songs = state.songs.filter((song) => song.id !== id);
     state.setlists.forEach((list) => {
+      const before = list.items.length;
       list.items = list.items.filter((item) => item.songId !== id);
+      if (list.items.length !== before) {
+        list.updatedAt = new Date().toISOString();
+        affected.push(list);
+      }
     });
     commit();
+    if (cloudEnabled()) {
+      deleteSongRow(id);
+      affected.forEach((list) => writeSetlist(list));
+    }
   }
 
   function toggleFavorite(id) {
@@ -520,6 +1105,7 @@
     song.favorite = !song.favorite;
     song.updatedAt = new Date().toISOString();
     commit();
+    writeSong(song);
     return song.favorite;
   }
 
@@ -529,6 +1115,11 @@
     if (!song) return;
     song.playCount = (Number(song.playCount) || 0) + 1;
     song.lastPlayed = new Date().toISOString();
+    if (cloudEnabled()) {
+      writeCloudCache();
+      writeSongFields(song.id, { play_count: song.playCount, last_played: song.lastPlayed });
+      return;
+    }
     persist();
   }
 
@@ -556,12 +1147,13 @@
         notes: '',
         items: [],
       }, payload);
-      list.id = window.U.uid('setlist');
+      list.id = cloudEnabled() ? uuid() : window.U.uid('setlist');
       list.createdAt = timestamp;
       list.updatedAt = timestamp;
       state.setlists.unshift(list);
     }
     commit();
+    writeSetlist(list);
     return list;
   }
 
@@ -569,6 +1161,7 @@
     if (!ensureEditable()) return false;
     state.setlists = state.setlists.filter((list) => list.id !== id);
     commit();
+    deleteSetlistRow(id);
   }
 
   function duplicateSetlist(id) {
@@ -576,7 +1169,7 @@
     const original = getSetlist(id);
     if (!original) return null;
     const copy = {
-      id: window.U.uid('setlist'),
+      id: cloudEnabled() ? uuid() : window.U.uid('setlist'),
       name: original.name + ' (copia)',
       date: original.date,
       service: original.service,
@@ -587,6 +1180,7 @@
     };
     state.setlists.unshift(copy);
     commit();
+    writeSetlist(copy);
     return copy;
   }
 
@@ -605,6 +1199,7 @@
     list.items.push(item);
     list.updatedAt = new Date().toISOString();
     commit();
+    writeSetlist(list);
     return item;
   }
 
@@ -617,6 +1212,7 @@
     Object.assign(item, patch);
     list.updatedAt = new Date().toISOString();
     commit();
+    writeSetlist(list);
     return item;
   }
 
@@ -627,6 +1223,7 @@
     list.items = list.items.filter((item) => item.id !== itemId);
     list.updatedAt = new Date().toISOString();
     commit();
+    writeSetlist(list);
   }
 
   function moveSetlistItem(setlistId, itemId, direction) {
@@ -643,6 +1240,7 @@
     items[target] = temp;
     list.updatedAt = new Date().toISOString();
     commit();
+    writeSetlist(list);
   }
 
   function setlistSongs(list) {
@@ -658,6 +1256,13 @@
   /* ---------- Ajustes ---------- */
 
   function setSetting(key, value) {
+    if (cloudEnabled()) {
+      // En modo nube, la apariencia y preferencias se guardan sólo en este dispositivo.
+      state.settings[key] = value;
+      writeLocalSettings();
+      notify();
+      return;
+    }
     // Apariencia es preferencia del dispositivo: se permite aun en perfiles de solo lectura.
     const localOnly = key === 'theme' || key === 'fontSize' || key === 'showChords';
     if (!localOnly && !ensureEditable()) return;
@@ -672,6 +1277,12 @@
   }
 
   function setSettings(patch) {
+    if (cloudEnabled()) {
+      Object.assign(state.settings, patch || {});
+      writeLocalSettings();
+      notify();
+      return;
+    }
     if (!ensureEditable()) return;
     Object.assign(state.settings, patch);
     if (patch && patch.churchName) {
@@ -753,6 +1364,21 @@
   }
 
   function exportProfile() {
+    if (cloudEnabled()) {
+      const church = window.Auth.church;
+      return JSON.stringify({
+        app: 'repertorio',
+        version: 1,
+        kind: 'church-profile',
+        exportedAt: new Date().toISOString(),
+        profileId: church ? church.id : '',
+        profileName: church ? church.name : '',
+        sharedBy: church ? church.name : '',
+        songs: state.songs,
+        setlists: state.setlists,
+        settings: state.settings,
+      }, null, 2);
+    }
     const profile = activeProfile();
     return JSON.stringify({
       app: 'repertorio',
@@ -856,6 +1482,35 @@
 
   /* ---------- Importar / exportar ---------- */
 
+  function importDataCloud(data, mode) {
+    if (!window.Auth.isAdmin) throw new Error('Solo los administradores pueden importar datos.');
+    const churchId = activeChurchId();
+    const prepared = prepareLocalSongs(data.songs);
+    const setlists = prepareLocalSetlists(Array.isArray(data.setlists) ? data.setlists : [], prepared.map);
+    const replace = mode === 'replace';
+
+    if (replace) {
+      state.songs = [];
+      state.setlists = [];
+    }
+    state.songs = prepared.songs.concat(state.songs);
+    state.setlists = setlists.concat(state.setlists);
+    commit();
+
+    queueOp('bulk:' + churchId, async () => {
+      if (replace) {
+        const songsDelete = await authClient().from('songs').delete().eq('church_id', churchId);
+        if (songsDelete.error) throw songsDelete.error;
+        const listsDelete = await authClient().from('setlists').delete().eq('church_id', churchId);
+        if (listsDelete.error) throw listsDelete.error;
+      }
+      await insertRows('songs', prepared.songs.map((song) => toSongRow(song, churchId)));
+      await insertRows('setlists', setlists.map((list) => toSetlistRow(list, churchId)));
+    }).catch((error) => handleWriteError(error, 'la importación'));
+
+    return { songs: prepared.songs.length, setlists: setlists.length };
+  }
+
   function exportData() {
     return JSON.stringify({
       app: 'repertorio',
@@ -868,8 +1523,9 @@
   }
 
   function importData(data, mode) {
-    if (!ensureEditable()) return false;
     if (!data || !Array.isArray(data.songs)) throw new Error('El archivo no contiene canciones válidas.');
+    if (cloudEnabled()) return importDataCloud(data, mode);
+    if (!ensureEditable()) return false;
     if (mode === 'replace') {
       applyData({
         songs: data.songs,
@@ -910,14 +1566,31 @@
   }
 
   function restoreDemo() {
-    if (!ensureEditable()) return false;
+    if (!ensureAdmin('restaurar los datos de ejemplo')) return false;
+    if (cloudEnabled()) {
+      importDataCloud(seed(), 'replace');
+      return true;
+    }
     applyData(seed());
     commit();
     return true;
   }
 
   function clearAll() {
-    if (!ensureEditable()) return false;
+    if (!ensureAdmin('borrar todos los datos')) return false;
+    if (cloudEnabled()) {
+      const churchId = activeChurchId();
+      state.songs = [];
+      state.setlists = [];
+      commit();
+      queueOp('bulk:' + churchId, async () => {
+        const songsDelete = await authClient().from('songs').delete().eq('church_id', churchId);
+        if (songsDelete.error) throw songsDelete.error;
+        const listsDelete = await authClient().from('setlists').delete().eq('church_id', churchId);
+        if (listsDelete.error) throw listsDelete.error;
+      }).catch((error) => handleWriteError(error, 'el borrado'));
+      return true;
+    }
     applyData({ songs: [], setlists: [], settings: state.settings });
     commit();
     return true;
@@ -926,7 +1599,8 @@
   window.Store = {
     CATEGORIES,
     state,
-    load, subscribe,
+    load, loadCloud, subscribe, clearSession,
+    pendingImport, importLocal, skipImport,
     getSong, saveSong, deleteSong, toggleFavorite, touchSong,
     getSetlist, saveSetlist, deleteSetlist, duplicateSetlist,
     addSongToSetlist, updateSetlistItem, removeSetlistItem, moveSetlistItem,
@@ -937,6 +1611,10 @@
     profileSummaries, switchProfile, createProfile, renameProfile, deleteProfile,
     exportProfile, importProfile,
     get canEdit() { return canEdit(); },
+    get readOnlyReason() { return readOnlyReason(); },
+    get readOnlyMessage() { return readOnlyMessage(); },
+    get isCloud() { return cloudEnabled(); },
+    get offline() { return offline; },
     get activeProfile() {
       const profile = activeProfile();
       return profile ? {

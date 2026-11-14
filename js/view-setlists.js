@@ -7,6 +7,30 @@
 
   let rehearsalState = null;
 
+  function canShareSetlist() {
+    const auth = window.Auth;
+    return !!(auth && auth.isEnabled && auth.church && auth.church.inviteCode);
+  }
+
+  function shareSetlist(setlist) {
+    const auth = window.Auth;
+    const church = auth && auth.isEnabled ? auth.church : null;
+    if (!church || !church.inviteCode) return;
+    const text = 'Repertorio «' + setlist.name + '» · ' + U.fmtDateLong(setlist.date)
+      + (setlist.service ? ' · ' + setlist.service : '')
+      + '\nIglesia: ' + church.name
+      + '\nCódigo de invitación: ' + church.inviteCode;
+    U.shareText({
+      title: 'Repertorio · ' + setlist.name,
+      text: text,
+      url: U.appUrl(),
+    }).then((result) => {
+      if (result === 'shared') UI.toast('Repertorio compartido');
+      else if (result === 'copied') UI.toast('Texto copiado para compartir');
+      else if (result === 'failed') UI.toast('No pudimos compartir. Copiá el texto a mano.', 'error');
+    });
+  }
+
   function cleanup() {
     rehearsalState = null;
   }
@@ -15,7 +39,7 @@
 
   function openSetlistForm(existing, onSaved) {
     if (!Store.canEdit) {
-      UI.toast('Este perfil es solo lectura', 'error');
+      UI.toast(Store.readOnlyMessage, 'error');
       return null;
     }
     const data = existing || {
@@ -184,7 +208,7 @@
 
   function openItemEditor(setlist, entry, onChange) {
     if (!Store.canEdit) {
-      UI.toast('Este perfil es solo lectura', 'error');
+      UI.toast(Store.readOnlyMessage, 'error');
       return null;
     }
     const song = entry.song;
@@ -227,7 +251,7 @@
 
   function openSongPicker(setlist, onChange) {
     if (!Store.canEdit) {
-      UI.toast('Este perfil es solo lectura', 'error');
+      UI.toast(Store.readOnlyMessage, 'error');
       return null;
     }
     const data = { query: '' };
@@ -336,6 +360,7 @@
       + '  <div class="head-actions">'
       + '    <button type="button" class="btn primary" id="startRehearsal"' + (entries.length ? '' : ' disabled') + '>' + UI.icon('play') + 'Iniciar ensayo</button>'
       + '    <button type="button" class="btn" data-print>' + UI.icon('printer') + 'Imprimir</button>'
+      + (canShareSetlist() ? '    <button type="button" class="btn" data-share-list>' + UI.icon('share') + 'Compartir repertorio</button>' : '')
       + (editable ? '    <button type="button" class="btn" id="editSetlist">' + UI.icon('edit') + 'Editar</button>' : '')
       + (editable ? '    <button type="button" class="btn ghost icon-only" data-duplicate title="Duplicar" aria-label="Duplicar">' + UI.icon('copy') + '</button>' : '')
       + (editable ? '    <button type="button" class="btn ghost icon-only" data-delete-list title="Eliminar" aria-label="Eliminar">' + UI.icon('trash') + '</button>' : '')
@@ -371,6 +396,9 @@
     if (editButton) editButton.addEventListener('click', () => openSetlistForm(setlist, refresh));
 
     container.querySelector('[data-print]').addEventListener('click', () => window.print());
+
+    const shareListButton = container.querySelector('[data-share-list]');
+    if (shareListButton) shareListButton.addEventListener('click', () => shareSetlist(setlist));
 
     const duplicateButton = container.querySelector('[data-duplicate]');
     if (duplicateButton) duplicateButton.addEventListener('click', () => {

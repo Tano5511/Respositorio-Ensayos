@@ -186,10 +186,18 @@
 
   function editor(container, songId) {
     if (!Store.canEdit) {
+      const reason = Store.readOnlyReason;
+      const title = reason === 'offline' ? 'Sin conexión' : reason === 'role' ? 'Solo lectura' : 'Perfil de solo lectura';
+      const message = reason === 'role'
+        ? 'Tu rol es músico: podés ver y usar el repertorio, pero las canciones las edita un administrador o editor.'
+        : reason === 'offline'
+          ? 'Estás sin conexión. Podés consultar el repertorio, pero para crear o modificar canciones necesitás internet.'
+          : 'Este perfil fue compartido y no se puede editar. Cambia a tu perfil para crear o modificar canciones.';
       document.title = 'Solo lectura · Repertorio';
       container.innerHTML = '<div class="empty"><div class="empty-icon">' + UI.icon('eye') + '</div>'
-        + '<h3>Perfil de solo lectura</h3><p>Este perfil fue compartido y no se puede editar. Cambia a tu perfil para crear o modificar canciones.</p>'
-        + '<div class="actions"><a class="btn primary" href="#/canciones">Ver canciones</a><a class="btn" href="#/ajustes">Cambiar de perfil</a></div></div>';
+        + '<h3>' + title + '</h3><p>' + message + '</p>'
+        + '<div class="actions"><a class="btn primary" href="#/canciones">Ver canciones</a>'
+        + (reason === 'profile' ? '<a class="btn" href="#/ajustes">Cambiar de perfil</a>' : '') + '</div></div>';
       return;
     }
     const existing = songId ? Store.getSong(songId) : null;

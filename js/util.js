@@ -139,10 +139,82 @@
     return n === 1 ? singular : pluralWord || singular + 's';
   }
 
+  const ROLE_LABELS = { admin: 'Administrador', editor: 'Editor', musico: 'Músico' };
+
+  function roleLabel(role) {
+    return ROLE_LABELS[role] || ROLE_LABELS.musico;
+  }
+
+  /* Dirección pública de la app, sin hash ni parámetros.
+     En GitHub Pages queda por ejemplo https://usuario.github.io/Respositorio-Ensayos/ */
+  function appUrl() {
+    try {
+      const url = new URL(window.location.href);
+      url.hash = '';
+      url.search = '';
+      url.pathname = url.pathname.replace(/index\.html$/i, '');
+      return url.toString();
+    } catch (error) {
+      return String(window.location.href || '').split('#')[0].split('?')[0];
+    }
+  }
+
+  function legacyCopy(value) {
+    try {
+      const area = document.createElement('textarea');
+      area.value = value;
+      area.setAttribute('readonly', '');
+      area.style.position = 'fixed';
+      area.style.top = '-1000px';
+      area.style.opacity = '0';
+      document.body.appendChild(area);
+      area.select();
+      const ok = document.execCommand('copy');
+      area.remove();
+      return ok;
+    } catch (error) {
+      return false;
+    }
+  }
+
+  function copyText(text) {
+    const value = String(text || '');
+    if (!value) return Promise.resolve(false);
+    if (navigator.clipboard && window.isSecureContext) {
+      return navigator.clipboard.writeText(value).then(
+        () => true,
+        () => legacyCopy(value)
+      );
+    }
+    return Promise.resolve(legacyCopy(value));
+  }
+
+  /* Comparte con el menú del sistema (celular) y, si no está disponible,
+     copia el texto al portapapeles. Devuelve shared | copied | cancelled | failed. */
+  async function shareText(options) {
+    const data = options || {};
+    const text = String(data.text || '');
+    const url = String(data.url || '');
+    if (navigator.share) {
+      try {
+        await navigator.share({
+          title: data.title || document.title,
+          text: text,
+          url: url || undefined,
+        });
+        return 'shared';
+      } catch (error) {
+        if (error && error.name === 'AbortError') return 'cancelled';
+      }
+    }
+    const copied = await copyText(url ? text + '\n' + url : text);
+    return copied ? 'copied' : 'failed';
+  }
+
   window.U = {
     $, $$, esc, el, uid, clamp, debounce, normalize,
     fmtDuration, fmtDurationLong, parseDurationInput,
     todayISO, parseISODate, fmtDate, fmtDateLong, weekdayShort, monthShort, relativeDate,
-    download, plural,
+    download, plural, roleLabel, appUrl, copyText, shareText,
   };
 })();
