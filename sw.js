@@ -1,5 +1,5 @@
 /* Service worker sencillo para uso sin conexión */
-const CACHE_NAME = 'repertorio-v13';
+const CACHE_NAME = 'repertorio-v14';
 const ASSETS = [
   './',
   './index.html',
