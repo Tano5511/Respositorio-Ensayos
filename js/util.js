@@ -211,10 +211,80 @@
     return copied ? 'copied' : 'failed';
   }
 
+  /* ---------- Links para escuchar ---------- */
+
+  /* Sólo se aceptan direcciones https://. Así se evitan esquemas peligrosos
+     como javascript:, data: o http:. */
+  function parseHttpsUrl(value) {
+    const text = String(value || '').trim();
+    if (!/^https:\/\//i.test(text)) return null;
+    try {
+      const url = new URL(text);
+      if (url.protocol !== 'https:' || !url.hostname) return null;
+      return url;
+    } catch (error) {
+      return null;
+    }
+  }
+
+  function isSafeHttpsUrl(value) {
+    return !!parseHttpsUrl(value);
+  }
+
+  const LINK_PLATFORMS = [
+    { key: 'youtube', name: 'YouTube', domains: ['youtube.com', 'youtu.be', 'youtube-nocookie.com'] },
+    { key: 'spotify', name: 'Spotify', domains: ['spotify.com'] },
+    { key: 'apple', name: 'Apple Music', domains: ['music.apple.com'] },
+    { key: 'soundcloud', name: 'SoundCloud', domains: ['soundcloud.com'] },
+    { key: 'deezer', name: 'Deezer', domains: ['deezer.com'] },
+    { key: 'tidal', name: 'Tidal', domains: ['tidal.com'] },
+    { key: 'vimeo', name: 'Vimeo', domains: ['vimeo.com'] },
+    { key: 'bandcamp', name: 'Bandcamp', domains: ['bandcamp.com'] },
+  ];
+
+  /* Devuelve { key, name } según el dominio. Para sitios desconocidos
+     devuelve el dominio como nombre, por ejemplo "ejemplo.com". */
+  function detectLinkPlatform(value) {
+    const url = parseHttpsUrl(value);
+    if (!url) return { key: '', name: '' };
+    const host = url.hostname.toLowerCase().replace(/^www\./, '');
+    const match = LINK_PLATFORMS.find((platform) =>
+      platform.domains.some((domain) => host === domain || host.endsWith('.' + domain))
+    );
+    if (match) return { key: match.key, name: match.name };
+    return { key: 'otro', name: host };
+  }
+
+  /* Extrae el ID de un video de YouTube. Devuelve '' si la dirección no es de
+     YouTube o si no se puede reconocer el video (por ejemplo, una lista). */
+  function youtubeVideoId(value) {
+    const url = parseHttpsUrl(value);
+    if (!url) return '';
+    const host = url.hostname.toLowerCase().replace(/^www\./, '');
+    const isYouTube = host === 'youtu.be'
+      || host === 'youtube.com'
+      || host.endsWith('.youtube.com')
+      || host === 'youtube-nocookie.com'
+      || host.endsWith('.youtube-nocookie.com');
+    if (!isYouTube) return '';
+
+    let id = '';
+    if (host === 'youtu.be') {
+      id = url.pathname.split('/').filter(Boolean)[0] || '';
+    } else if (url.pathname === '/watch') {
+      id = url.searchParams.get('v') || '';
+    } else {
+      const parts = url.pathname.split('/').filter(Boolean);
+      if (parts[0] === 'shorts' || parts[0] === 'embed' || parts[0] === 'live') id = parts[1] || '';
+    }
+    return /^[A-Za-z0-9_-]{11}$/.test(id) ? id : '';
+  }
+
   window.U = {
     $, $$, esc, el, uid, clamp, debounce, normalize,
     fmtDuration, fmtDurationLong, parseDurationInput,
     todayISO, parseISODate, fmtDate, fmtDateLong, weekdayShort, monthShort, relativeDate,
     download, plural, roleLabel, appUrl, copyText, shareText,
+    parseHttpsUrl, isSafeHttpsUrl, detectLinkPlatform, youtubeVideoId,
   };
 })();

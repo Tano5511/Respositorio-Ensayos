@@ -208,7 +208,7 @@
     }
     const song = existing || {
       title: '', author: '', key: Store.state.settings.defaultKey || 'G', capo: 0, bpm: '',
-      duration: 0, category: 'Alabanza', difficulty: 'Fácil', tags: [], notes: '', content: '',
+      duration: 0, category: 'Alabanza', difficulty: 'Fácil', tags: [], links: [], notes: '', content: '',
     };
     document.title = (existing ? 'Editar' : 'Nueva canción') + ' · Repertorio';
 
@@ -251,6 +251,14 @@
       + '    </div>'
       + '    <div class="card panel">'
       + '      <div class="row" style="justify-content:space-between;flex-wrap:wrap;gap:8px">'
+      + '        <div><h2>Links para escuchar</h2><p class="tiny muted">Pegá enlaces que empiecen con <code>https://</code>. El nombre se completa solo según la plataforma y podés cambiarlo.</p></div>'
+      + '        <button type="button" class="btn sm" id="addSongLink">' + UI.icon('plus') + 'Añadir link</button>'
+      + '      </div>'
+      + '      <div id="songLinks" class="link-list"></div>'
+      + '      <p class="tiny muted" id="songLinksEmpty" style="margin-top:12px">Todavía no agregaste links.</p>'
+      + '    </div>'
+      + '    <div class="card panel">'
+      + '      <div class="row" style="justify-content:space-between;flex-wrap:wrap;gap:8px">'
       + '        <div><h2>Letra y acordes</h2><p class="tiny muted">Escribe los acordes en la línea de arriba y la letra debajo, alineados.</p></div>'
       + '        <button type="button" class="btn sm" id="convertChordpro">' + UI.icon('refresh') + 'Convertir ChordPro</button>'
       + '      </div>'
@@ -284,6 +292,108 @@
     const previewKey = U.$('#previewKey', container);
     const titleInput = U.$('#fTitle', container);
     const keySelect = U.$('#fKey', container);
+    const linksList = U.$('#songLinks', container);
+    const linksEmpty = U.$('#songLinksEmpty', container);
+
+    /* ---------- Links para escuchar ---------- */
+
+    function linkRow(link) {
+      const data = link || {};
+      const row = document.createElement('div');
+      row.className = 'link-row';
+      row.setAttribute('data-link-row', '');
+      row.innerHTML = '<input type="url" class="link-url" data-link-url inputmode="url" autocomplete="off" spellcheck="false" placeholder="https://..." aria-label="Dirección del link">'
+        + '<input type="text" class="link-label" data-link-label maxlength="40" placeholder="YouTube, Spotify…" aria-label="Nombre para mostrar">'
+        + '<button type="button" class="btn ghost icon-only link-remove" data-remove-link title="Quitar link" aria-label="Quitar link">' + UI.icon('trash') + '</button>';
+      const urlInput = row.querySelector('[data-link-url]');
+      const labelInput = row.querySelector('[data-link-label]');
+      const url = String(data.url || '');
+      const label = String(data.label || '');
+      urlInput.value = url;
+      labelInput.value = label || U.detectLinkPlatform(url).name;
+      labelInput.dataset.auto = label ? '0' : '1';
+      return row;
+    }
+
+    function syncLinksEmpty() {
+      linksEmpty.hidden = !!linksList.querySelector('[data-link-row]');
+    }
+
+    function addLinkRow(link, focus) {
+      const row = linkRow(link);
+      linksList.appendChild(row);
+      syncLinksEmpty();
+      if (focus) row.querySelector('[data-link-url]').focus();
+      return row;
+    }
+
+    function collectLinks() {
+      const rows = Array.from(linksList.querySelectorAll('[data-link-row]'));
+      const links = [];
+      const seen = new Set();
+      for (let index = 0; index < rows.length; index += 1) {
+        const row = rows[index];
+        const urlInput = row.querySelector('[data-link-url]');
+        const labelInput = row.querySelector('[data-link-label]');
+        const url = urlInput.value.trim();
+        const label = labelInput.value.trim();
+        urlInput.classList.remove('invalid');
+        if (!url && !label) continue;
+        if (!url) {
+          UI.toast('Completá la dirección del link o quitalo.', 'error');
+          urlInput.classList.add('invalid');
+          urlInput.focus();
+          return null;
+        }
+        if (!U.isSafeHttpsUrl(url)) {
+          UI.toast('El link tiene que empezar con https://. Por ejemplo: https://www.youtube.com/…', 'error');
+          urlInput.classList.add('invalid');
+          urlInput.focus();
+          return null;
+        }
+        const key = url.toLowerCase();
+        if (seen.has(key)) {
+          UI.toast('Ese link ya está agregado.', 'error');
+          urlInput.classList.add('invalid');
+          urlInput.focus();
+          return null;
+        }
+        seen.add(key);
+        const finalLabel = label || U.detectLinkPlatform(url).name;
+        links.push(finalLabel ? { url: url, label: finalLabel } : { url: url });
+      }
+      return links;
+    }
+
+    (song.links || []).forEach((link) => addLinkRow(link, false));
+    syncLinksEmpty();
+
+    U.$('#addSongLink', container).addEventListener('click', () => addLinkRow({ url: '', label: '' }, true));
+
+    linksList.addEventListener('input', (event) => {
+      const urlInput = event.target.closest('[data-link-url]');
+      if (urlInput) {
+        const row = urlInput.closest('[data-link-row]');
+        const labelInput = row.querySelector('[data-link-label]');
+        urlInput.classList.remove('invalid');
+        const detected = U.detectLinkPlatform(urlInput.value);
+        if (detected.name && (!labelInput.value.trim() || labelInput.dataset.auto === '1')) {
+          labelInput.value = detected.name;
+          labelInput.dataset.auto = '1';
+        }
+        return;
+      }
+      const labelInput = event.target.closest('[data-link-label]');
+      if (labelInput) labelInput.dataset.auto = labelInput.value.trim() ? '0' : '1';
+    });
+
+    linksList.addEventListener('click', (event) => {
+      const removeButton = event.target.closest('[data-remove-link]');
+      if (!removeButton) return;
+      const row = removeButton.closest('[data-link-row]');
+      if (row) row.remove();
+      syncLinksEmpty();
+    });
 
     function updatePreview() {
       previewTitle.textContent = titleInput.value.trim() || 'Sin título';
@@ -330,6 +440,8 @@
         titleInput.focus();
         return;
       }
+      const links = collectLinks();
+      if (links === null) return;
       const payload = {
         id: existing ? existing.id : undefined,
         title,
@@ -341,6 +453,7 @@
         category: U.$('#fCategory', container).value,
         difficulty: U.$('#fDifficulty', container).value,
         tags: U.$('#fTags', container).value.split(',').map((tag) => tag.trim()).filter(Boolean),
+        links: links,
         notes: U.$('#fNotes', container).value.trim(),
         content: textarea.value.replace(/\r/g, ''),
       };

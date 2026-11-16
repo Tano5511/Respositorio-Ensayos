@@ -410,6 +410,28 @@
     return number;
   }
 
+  /* Limpia la lista de links de una canción. Acepta strings sueltos por si
+     vienen de un respaldo viejo. Descarta cualquier URL que no sea https://
+     y quita duplicados. */
+  function normalizeLinks(raw) {
+    const list = Array.isArray(raw) ? raw : [];
+    const seen = new Set();
+    const links = [];
+    for (let index = 0; index < list.length && links.length < 20; index += 1) {
+      const item = list[index];
+      const source = typeof item === 'string' ? { url: item } : item;
+      if (!source || typeof source !== 'object') continue;
+      const url = String(source.url || '').trim();
+      if (!window.U.isSafeHttpsUrl(url)) continue;
+      const key = url.toLowerCase();
+      if (seen.has(key)) continue;
+      seen.add(key);
+      const label = String(source.label || '').trim().slice(0, 40);
+      links.push(label ? { url: url, label: label } : { url: url });
+    }
+    return links;
+  }
+
   function plainLyrics(content) {
     if (!content || !window.Chords) return '';
     return window.Chords.parseSongContent(content).map((block) => {
@@ -436,6 +458,7 @@
       category: String(song.category || ''),
       difficulty: String(song.difficulty || ''),
       tags: Array.isArray(song.tags) ? song.tags.map((tag) => String(tag).trim()).filter(Boolean) : [],
+      links: normalizeLinks(song.links),
       favorite: !!song.favorite,
       play_count: toInt(song.playCount, 0),
       last_played: song.lastPlayed || null,
@@ -454,6 +477,7 @@
       category: row.category || '',
       difficulty: row.difficulty || '',
       tags: Array.isArray(row.tags) ? row.tags.slice() : [],
+      links: normalizeLinks(row.links),
       notes: row.notes || '',
       favorite: !!row.favorite,
       playCount: Number(row.play_count) || 0,
@@ -787,6 +811,7 @@
         category: raw.category || '',
         difficulty: raw.difficulty || '',
         tags: Array.isArray(raw.tags) ? raw.tags.slice() : [],
+        links: normalizeLinks(raw.links),
         notes: raw.notes || '',
         favorite: !!raw.favorite,
         playCount: toInt(raw.playCount, 0),
@@ -955,6 +980,7 @@
     state.settings = Object.assign({}, DEFAULT_SETTINGS, data.settings || {});
     state.songs.forEach((song) => {
       song.tags = Array.isArray(song.tags) ? song.tags : [];
+      song.links = normalizeLinks(song.links);
       song.favorite = !!song.favorite;
       song.playCount = Number(song.playCount) || 0;
       song.capo = Number(song.capo) || 0;
@@ -1071,6 +1097,7 @@
       state.songs.unshift(song);
     }
     song.tags = Array.isArray(song.tags) ? song.tags : [];
+    song.links = normalizeLinks(song.links);
     song.capo = Number(song.capo) || 0;
     song.bpm = Number(song.bpm) || 0;
     song.duration = Number(song.duration) || 0;
@@ -1559,6 +1586,7 @@
     }
     state.songs.forEach((song) => {
       song.tags = Array.isArray(song.tags) ? song.tags : [];
+      song.links = normalizeLinks(song.links);
       if (!song.content) song.content = '';
     });
     commit();

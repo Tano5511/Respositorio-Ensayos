@@ -126,6 +126,9 @@
     if (code === 'PGRST202' || /could not find the function/i.test(message)) {
       return 'La base de datos todavía no tiene esta función. Falta ejecutar supabase/migration-editor.sql en Supabase.';
     }
+    if ((code === 'PGRST204' || /schema cache/i.test(message)) && /links/i.test(message)) {
+      return 'La base de datos todavía no tiene la columna de links. Falta ejecutar supabase/migration-links.sql en Supabase.';
+    }
 
     if (name === 'AuthRetryableFetchError' || name === 'TypeError' && /fetch|network/i.test(message)) {
       return 'No hay conexión. Revisá tu internet e intentá de nuevo.';
