@@ -18,6 +18,8 @@
     mode: 'loading',
     message: '',
     pendingEmail: '',
+    // Código de invitación. Se carga por RPC solo para administradores.
+    inviteCode: '',
   };
 
   const listeners = [];
@@ -387,16 +389,39 @@
       return;
     }
 
-    const { data, error } = await state.client
+    // Dos consultas separadas, siempre con columnas explícitas.
+    // No usamos el embed `churches ( ... )`: PostgREST lo resuelve como un
+    // `churches.*` interno y necesita SELECT de tabla, que está revocado para
+    // que nadie pueda leer invite_code.
+    const { data: memberRows, error: memberError } = await state.client
       .from('members')
-      .select('church_id, role, churches ( id, name, slug, invite_code )')
+      .select('church_id, role')
       .eq('user_id', state.user.id);
 
-    if (error) throw error;
+    if (memberError) throw memberError;
+    if (!memberRows || !memberRows.length) {
+      state.memberships = [];
+      return;
+    }
 
-    state.memberships = (data || [])
+    const churchIds = Array.from(new Set(
+      memberRows.map((row) => row.church_id).filter(Boolean)
+    ));
+
+    const { data: churchRows, error: churchError } = await state.client
+      .from('churches')
+      .select('id, name, slug')
+      .in('id', churchIds);
+
+    if (churchError) throw churchError;
+
+    const churchesById = new Map(
+      (churchRows || []).map((church) => [church.id, church])
+    );
+
+    state.memberships = memberRows
       .map((row) => {
-        const church = Array.isArray(row.churches) ? row.churches[0] : row.churches;
+        const church = churchesById.get(row.church_id);
         if (!church) return null;
         return {
           role: row.role === 'admin' ? 'admin' : row.role === 'editor' ? 'editor' : 'musico',
@@ -404,7 +429,6 @@
             id: church.id,
             name: church.name,
             slug: church.slug,
-            inviteCode: church.invite_code || '',
           },
         };
       })
@@ -418,6 +442,7 @@
       state.user = null;
       state.memberships = [];
       state.activeChurchId = null;
+      state.inviteCode = '';
       lastToken = '';
       showGate('login');
       emit('signed-out');
@@ -550,8 +575,8 @@
     clearFormError(form);
     const code = String(form.code.value || '').trim().toUpperCase();
 
-    if (!/^[A-Z0-9]{6,12}$/.test(code)) {
-      return formError(form, 'El código tiene 8 letras y números, sin espacios.');
+    if (!/^[A-Z0-9]{8,32}$/.test(code)) {
+      return formError(form, 'El código tiene entre 8 y 32 letras y números, sin espacios.');
     }
 
     busy(form, true, 'Uniéndome…');
@@ -559,7 +584,7 @@
       const { data, error } = await state.client.rpc('join_church', { p_invite_code: code });
       if (error) throw error;
       const church = Array.isArray(data) ? data[0] : data;
-      if (!church || !church.id) throw new Error('No pudimos unirte a la iglesia. Intentá de nuevo.');
+      if (!church || !church.id) throw new Error('Ese código de invitación no es correcto. Pedíselo a un administrador.');
       await afterChurchChange(church.id);
       UI.toast('Te uniste a ' + church.name);
     } catch (error) {
@@ -574,6 +599,7 @@
     if (!state.memberships.some((item) => item.church.id === churchId)) {
       throw new Error('No pudimos cargar tu iglesia. Recargá la página.');
     }
+    state.inviteCode = '';
     state.activeChurchId = churchId;
     storeChurchId(churchId);
     lastToken = state.session ? String(state.session.access_token || '') : '';
@@ -584,6 +610,7 @@
   function selectChurch(id) {
     const match = state.memberships.find((item) => item.church.id === id);
     if (!match) return;
+    state.inviteCode = '';
     state.activeChurchId = id;
     storeChurchId(id);
     hideGate();
@@ -725,6 +752,28 @@
       if (!state.client) return Promise.reject(new Error('Supabase no está configurado.'));
       return state.client.rpc('join_church', { p_invite_code: String(code || '').trim().toUpperCase() });
     },
+    /* El código NO viene con la lista de iglesias: se pide por RPC y la base
+       solo lo devuelve si quien llama es administrador. */
+    async loadInviteCode(churchId) {
+      if (!state.client || !state.user) throw new Error('Iniciá sesión para ver el código de invitación.');
+      const { data, error } = await state.client.rpc('get_invite_code', {
+        p_church_id: churchId || state.activeChurchId,
+      });
+      if (error) throw error;
+      const code = String(data || '');
+      if (!churchId || churchId === state.activeChurchId) state.inviteCode = code;
+      return code;
+    },
+    async regenerateInviteCode(churchId) {
+      if (!state.client || !state.user) throw new Error('Iniciá sesión para regenerar el código de invitación.');
+      const { data, error } = await state.client.rpc('regenerate_invite_code', {
+        p_church_id: churchId || state.activeChurchId,
+      });
+      if (error) throw error;
+      const code = String(data || '');
+      if (!churchId || churchId === state.activeChurchId) state.inviteCode = code;
+      return code;
+    },
     selectChurch,
     refreshMemberships,
     updateChurchName,
@@ -735,6 +784,7 @@
     get session() { return state.session; },
     get memberships() { return state.memberships.slice(); },
     get church() { const item = activeMembership(); return item ? item.church : null; },
+    get inviteCode() { return state.inviteCode; },
     get role() { const item = activeMembership(); return item ? item.role : null; },
     get isAdmin() { const item = activeMembership(); return !!item && item.role === 'admin'; },
     get isEditor() { const item = activeMembership(); return !!item && item.role === 'editor'; },

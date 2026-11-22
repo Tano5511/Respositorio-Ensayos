@@ -14,9 +14,10 @@
     return !!(a && a.user && a.church);
   }
 
-  function inviteText(church) {
+  function inviteText(church, code) {
     return 'Unite al repertorio de ' + church.name + ' en Repertorio.\n'
-      + 'Código de invitación: ' + church.inviteCode;
+      + 'Código de invitación: ' + code + '\n'
+      + 'Si necesitás otro código, pedíselo a un administrador.';
   }
 
   async function share(options, copiedMessage) {
@@ -65,7 +66,6 @@
     const isAdmin = a.isAdmin;
     const canRename = isAdmin && !Store.offline;
     const appLink = U.appUrl();
-    const invite = inviteText(church);
 
     container.innerHTML = ''
       + '<a class="back-link" href="#/ajustes">' + UI.icon('arrow-left') + 'Ajustes</a>'
@@ -74,7 +74,7 @@
       + '  <h1>' + U.esc(church.name) + '</h1>'
       + '  <p class="sub">Perfil, invitación y equipo de tu iglesia. Tu rol: <strong>' + U.esc(U.roleLabel(a.role)) + '</strong>.</p></div>'
       + '  <div class="head-actions">'
-      + '    <button type="button" class="btn primary" id="shareInvite">' + UI.icon('share') + 'Compartir invitación</button>'
+      + (isAdmin ? '    <button type="button" class="btn primary" id="shareInvite">' + UI.icon('share') + 'Compartir invitación</button>' : '')
       + '  </div>'
       + '</header>'
       + '<div class="settings-grid">'
@@ -95,16 +95,19 @@
             : 'Solo un administrador puede cambiar el nombre de la iglesia.') + '</p>')
       + '  </section>'
 
-      + '  <section class="card settings-card">'
-      + '    <h2>Código de invitación</h2>'
-      + '    <p class="desc">Quien use este código entra a la iglesia como <strong>Músico</strong> y puede ver el repertorio. Después un administrador puede darle otro rol.</p>'
-      + '    <div class="invite-box"><code class="invite-code" id="inviteCode">' + U.esc(church.inviteCode || '—') + '</code></div>'
-      + '    <div class="row wrap" style="gap:8px;margin-top:12px">'
-      + '      <button type="button" class="btn" id="copyCode">' + UI.icon('copy') + 'Copiar código</button>'
-      + '      <button type="button" class="btn primary" id="shareCode">' + UI.icon('share') + 'Compartir invitación</button>'
-      + '    </div>'
-      + '    <p class="tiny muted" style="margin-top:12px">Tratá el código como una contraseña: cualquiera que lo tenga puede sumarse a la iglesia.</p>'
-      + '  </section>'
+      + (isAdmin
+        ? '  <section class="card settings-card">'
+          + '    <h2>Código de invitación</h2>'
+          + '    <p class="desc">Solo los administradores pueden ver y compartir este código. Quien lo usa entra como <strong>Músico</strong> y puede ver el repertorio; después un administrador puede darle otro rol.</p>'
+          + '    <div class="invite-box"><code class="invite-code" id="inviteCodeValue">Cargando...</code></div>'
+          + '    <div class="row wrap" style="gap:8px;margin-top:12px">'
+          + '      <button type="button" class="btn" id="copyCode" disabled>Copiar código</button>'
+          + '      <button type="button" class="btn primary" id="shareCode" disabled>Compartir invitación</button>'
+          + '      <button type="button" class="btn ghost" id="regenerateCode" disabled>Regenerar código</button>'
+          + '    </div>'
+          + '    <p class="tiny muted" style="margin-top:12px">Tratá el código como una contraseña: cualquiera que lo tenga puede sumarse a la iglesia. Si se compartió con alguien que ya no debe entrar, regeneralo: el código anterior deja de servir.</p>'
+          + '  </section>'
+        : '')
 
       + '  <section class="card settings-card">'
       + '    <h2>Compartir la app</h2>'
@@ -156,14 +159,14 @@
         }
         saveButton.disabled = true;
         try {
-          const { data, error } = await a.client
+          // Sin .select(): así no se pide ninguna columna de churches en el
+          // RETURNING y no dependemos del permiso de lectura de la tabla.
+          const { error } = await a.client
             .from('churches')
             .update({ name: value })
-            .eq('id', church.id)
-            .select('id, name');
+            .eq('id', church.id);
           if (error) throw error;
-          const saved = Array.isArray(data) && data[0] && data[0].name ? String(data[0].name) : value;
-          a.updateChurchName(saved);
+          a.updateChurchName(value);
           UI.toast('Nombre de la iglesia actualizado');
           document.dispatchEvent(new CustomEvent('repertorio:refresh'));
         } catch (error) {
@@ -182,20 +185,80 @@
       }
     }
 
-    /* ---------- Invitación ---------- */
+    /* ---------- Invitación (solo admin) ---------- */
 
-    const shareInvite = () => share({ title: 'Invitación a ' + church.name, text: invite, url: appLink }, 'Invitación copiada');
-    const headerShare = U.$('#shareInvite', container);
-    if (headerShare) headerShare.addEventListener('click', shareInvite);
-    const shareCodeButton = U.$('#shareCode', container);
-    if (shareCodeButton) shareCodeButton.addEventListener('click', shareInvite);
+    if (isAdmin) {
+      let inviteCode = '';
+      const codeValue = U.$('#inviteCodeValue', container);
+      const headerShare = U.$('#shareInvite', container);
+      const shareCodeButton = U.$('#shareCode', container);
+      const copyCodeButton = U.$('#copyCode', container);
+      const regenerateButton = U.$('#regenerateCode', container);
 
-    const copyCodeButton = U.$('#copyCode', container);
-    if (copyCodeButton) {
-      copyCodeButton.addEventListener('click', async () => {
-        const ok = await U.copyText(church.inviteCode || '');
-        UI.toast(ok ? 'Código copiado' : 'No pudimos copiar el código', ok ? undefined : 'error');
-      });
+      function setButtonsEnabled(enabled) {
+        [headerShare, shareCodeButton, copyCodeButton, regenerateButton]
+          .forEach((button) => { if (button) button.disabled = !enabled; });
+      }
+
+      function setInviteCode(code) {
+        inviteCode = String(code || '');
+        if (codeValue) codeValue.textContent = inviteCode || 'No disponible';
+        setButtonsEnabled(!!inviteCode);
+      }
+
+      async function refreshInviteCode() {
+        try {
+          setInviteCode(await a.loadInviteCode(church.id));
+        } catch (error) {
+          if (codeValue) codeValue.textContent = 'No se pudo cargar';
+          UI.toast(a.errorText(error), 'error');
+        }
+      }
+
+      async function shareInvite() {
+        if (!inviteCode) {
+          await refreshInviteCode();
+          if (!inviteCode) return;
+        }
+        await share({
+          title: 'Invitación a ' + church.name,
+          text: inviteText(church, inviteCode),
+          url: appLink,
+        }, 'Invitación copiada');
+      }
+
+      if (headerShare) headerShare.addEventListener('click', shareInvite);
+      if (shareCodeButton) shareCodeButton.addEventListener('click', shareInvite);
+
+      if (copyCodeButton) {
+        copyCodeButton.addEventListener('click', async () => {
+          if (!inviteCode) await refreshInviteCode();
+          const ok = inviteCode ? await U.copyText(inviteCode) : false;
+          UI.toast(ok ? 'Código copiado' : 'No pudimos copiar el código', ok ? undefined : 'error');
+        });
+      }
+
+      if (regenerateButton) {
+        regenerateButton.addEventListener('click', async () => {
+          const confirmed = await UI.confirm({
+            title: 'Regenerar código de invitación',
+            message: 'El código actual dejará de servir. Si lo compartiste con alguien, avisale el nuevo.',
+            confirmLabel: 'Regenerar',
+            danger: true,
+          });
+          if (!confirmed) return;
+          regenerateButton.disabled = true;
+          try {
+            setInviteCode(await a.regenerateInviteCode(church.id));
+            UI.toast('Código regenerado');
+          } catch (error) {
+            regenerateButton.disabled = false;
+            UI.toast(a.errorText(error), 'error');
+          }
+        });
+      }
+
+      refreshInviteCode();
     }
 
     const copyLinkButton = U.$('#copyLink', container);

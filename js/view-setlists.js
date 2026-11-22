@@ -7,19 +7,26 @@
 
   let rehearsalState = null;
 
+  /* El código de invitación se comparte solo desde una cuenta de admin. */
   function canShareSetlist() {
     const auth = window.Auth;
-    return !!(auth && auth.isEnabled && auth.church && auth.church.inviteCode);
+    return !!(auth && auth.isEnabled && auth.isAdmin && auth.church);
   }
 
   function shareSetlist(setlist) {
     const auth = window.Auth;
     const church = auth && auth.isEnabled ? auth.church : null;
-    if (!church || !church.inviteCode) return;
+    if (!church || !auth.isAdmin) return;
+
+    // La RPC del código se llama SOLO desde la pantalla de Iglesia. Acá se
+    // usa el código ya cargado en memoria, si el admin pasó por esa pantalla.
+    const code = auth.inviteCode || '';
     const text = 'Repertorio «' + setlist.name + '» · ' + U.fmtDateLong(setlist.date)
       + (setlist.service ? ' · ' + setlist.service : '')
       + '\nIglesia: ' + church.name
-      + '\nCódigo de invitación: ' + church.inviteCode;
+      + (code
+        ? '\nCódigo de invitación: ' + code
+        : '\nPedile el código de invitación a un administrador desde Iglesia.');
     U.shareText({
       title: 'Repertorio · ' + setlist.name,
       text: text,
