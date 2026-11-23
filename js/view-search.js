@@ -235,7 +235,7 @@
         const line = snippet(song, words);
         return '<div class="result-row fade-in">'
           + '<div class="main">'
-          + '<div class="t"><a href="#/canciones/' + song.id + '">' + highlight(song.title, searchState.query.trim()) + '</a>'
+          + '<div class="t"><a href="#/canciones/' + U.esc(song.id) + '">' + highlight(song.title, searchState.query.trim()) + '</a>'
           + (song.favorite ? '<span class="chip accent" title="Favorita">' + UI.icon('star') + '</span>' : '')
           + (song.category ? '<span class="chip blue">' + U.esc(song.category) + '</span>' : '')
           + '</div>'
@@ -248,7 +248,7 @@
           + ((song.tags || []).length ? '<div class="tiny muted" style="margin-top:2px">' + song.tags.map((tag) => '#' + U.esc(tag)).join('  ') + '</div>' : '')
           + (line ? '<div class="snippet">' + U.esc(line) + '</div>' : '')
           + '</div>'
-          + '<div class="right">' + (song.key ? UI.keyBadge(song.key) : '') + '<a class="btn sm" href="#/canciones/' + song.id + '">Abrir</a></div>'
+          + '<div class="right">' + (song.key ? UI.keyBadge(song.key) : '') + '<a class="btn sm" href="#/canciones/' + U.esc(song.id) + '">Abrir</a></div>'
           + '</div>';
       }).join('');
     }

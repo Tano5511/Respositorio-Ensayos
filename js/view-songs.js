@@ -10,6 +10,9 @@
     'Cm', 'C#m', 'Dm', 'Ebm', 'Em', 'Fm', 'F#m', 'Gm', 'G#m', 'Am', 'Bbm', 'Bm',
   ];
   const DIFFICULTIES = ['Fácil', 'Media', 'Avanzada'];
+  const SUMMARY_NAMES = ['Intro', 'Verso', 'Pre-coro', 'Coro', 'Puente', 'Instrumental', 'Final', 'Otro'];
+  const SUMMARY_LIMITS = { name: 40, phrase: 120, degrees: 200, note: 120 };
+  const SUMMARY_MAX_PARTS = 40;
 
   let sortMode = 'recent';
   let onlyFavorites = false;
@@ -37,10 +40,10 @@
     const more = (song.tags || []).length > 3 ? '<span class="chip plain">+' + ((song.tags || []).length - 3) + '</span>' : '';
     return '<article class="song-card fade-in">'
       + '<div class="title-row"><div style="min-width:0">'
-      + '<h3><a href="#/canciones/' + song.id + '">' + U.esc(song.title) + '</a></h3>'
+      + '<h3><a href="#/canciones/' + U.esc(song.id) + '">' + U.esc(song.title) + '</a></h3>'
       + '<div class="author">' + U.esc(song.author || 'Autor desconocido') + '</div>'
       + '</div>' + (editable
-        ? '<button type="button" class="star-btn' + (song.favorite ? ' on' : '') + '" data-fav="' + song.id + '" aria-label="Favorita" aria-pressed="' + (song.favorite ? 'true' : 'false') + '">' + UI.icon('star') + '</button>'
+        ? '<button type="button" class="star-btn' + (song.favorite ? ' on' : '') + '" data-fav="' + U.esc(song.id) + '" aria-label="Favorita" aria-pressed="' + (song.favorite ? 'true' : 'false') + '">' + UI.icon('star') + '</button>'
         : (song.favorite ? '<span class="chip accent" title="Favorita">' + UI.icon('star') + '</span>' : ''))
       + '</div>'
       + '<div class="meta">'
@@ -52,9 +55,9 @@
       + '</div>'
       + ((tags || more) ? '<div class="tags">' + tags + more + '</div>' : '<div class="tags"></div>')
       + '<div class="card-actions">'
-      + '<a class="btn ghost" href="#/canciones/' + song.id + '">Abrir</a>'
-      + (editable ? '<a class="btn ghost" href="#/canciones/' + song.id + '/editar">Editar</a>' : '')
-      + (editable ? '<button type="button" class="btn ghost icon-only" data-add="' + song.id + '" title="Añadir a un repertorio" aria-label="Añadir a un repertorio">' + UI.icon('plus') + '</button>' : '')
+      + '<a class="btn ghost" href="#/canciones/' + U.esc(song.id) + '">Abrir</a>'
+      + (editable ? '<a class="btn ghost" href="#/canciones/' + U.esc(song.id) + '/editar">Editar</a>' : '')
+      + (editable ? '<button type="button" class="btn ghost icon-only" data-add="' + U.esc(song.id) + '" title="Añadir a un repertorio" aria-label="Añadir a un repertorio">' + UI.icon('plus') + '</button>' : '')
       + '</div>'
       + '</article>';
   }
@@ -208,7 +211,7 @@
     }
     const song = existing || {
       title: '', author: '', key: Store.state.settings.defaultKey || 'G', capo: 0, bpm: '',
-      duration: 0, category: 'Alabanza', difficulty: 'Fácil', tags: [], links: [], notes: '', content: '',
+      duration: 0, category: 'Alabanza', difficulty: 'Fácil', tags: [], links: [], summary: [], notes: '', content: '',
     };
     document.title = (existing ? 'Editar' : 'Nueva canción') + ' · Repertorio';
 
@@ -274,9 +277,18 @@
       + '      </div>'
       + '      <p class="tiny muted" style="margin-top:10px">Formato: una línea de acordes, luego la letra. Las secciones van entre corchetes, por ejemplo <code>[Coro]</code>. Usa espacios para alinear cada acorde sobre la sílaba.</p>'
       + '    </div>'
-      + (existing ? '    <div class="card panel" style="border-color:color-mix(in srgb, var(--danger) 25%, var(--border-soft))">'
+      + (existing && Store.canDelete ? '    <div class="card panel" style="border-color:color-mix(in srgb, var(--danger) 25%, var(--border-soft))">'
         + '<div class="row" style="justify-content:space-between;flex-wrap:wrap;gap:10px"><div><h3 class="text-danger">Eliminar canción</h3><p class="tiny muted">También se quitará de los repertorios donde esté.</p></div>'
         + '<button type="button" class="btn danger" id="deleteSong">' + UI.icon('trash') + 'Eliminar</button></div></div>' : '')
+      + '    <div class="card panel" id="summaryPanel">'
+      + '      <div class="row" style="justify-content:space-between;flex-wrap:wrap;gap:8px">'
+      + '        <div><h2>Resumen por parte</h2><p class="tiny muted">Para el talkback: la frase guía y los grados de cada parte, en orden. Podés completarlo después.</p></div>'
+      + '        <button type="button" class="btn sm" id="addSummaryPart">' + UI.icon('plus') + 'Añadir parte</button>'
+      + '      </div>'
+      + '      <div id="summaryParts" class="summary-list"></div>'
+      + '      <p class="tiny muted" id="summaryEmpty" style="margin-top:12px">Todavía no agregaste partes del resumen.</p>'
+      + '      <p class="tiny muted" style="margin-top:10px">Los grados son texto libre, por ejemplo <code>1 - 1 - 4 - 2</code> o <code>1 - 2 - 6 - 4 | 1 - 2 - 6 - 4</code>.</p>'
+      + '    </div>'
       + '  </div>'
       + '  <aside class="preview-pane">'
       + '    <div class="preview-head"><div><div class="eyebrow" style="margin:0">Vista previa</div><strong id="previewTitle">' + U.esc(song.title || 'Sin título') + '</strong></div>'
@@ -395,6 +407,186 @@
       syncLinksEmpty();
     });
 
+    /* ---------- Resumen por parte ---------- */
+
+    const summaryList = U.$('#summaryParts', container);
+    const summaryEmpty = U.$('#summaryEmpty', container);
+
+    function summaryNameOptions(selected) {
+      return SUMMARY_NAMES.map((name) => '<option value="' + U.esc(name) + '"'
+        + (name === selected ? ' selected' : '') + '>' + U.esc(name) + '</option>').join('');
+    }
+
+    function summaryTitle(row) {
+      const node = row.querySelector('[data-summary-title]');
+      const select = row.querySelector('[data-summary-name]');
+      const custom = row.querySelector('[data-summary-custom]');
+      const label = select.value === 'Otro'
+        ? (custom.value.trim().slice(0, SUMMARY_LIMITS.name) || 'Otro')
+        : select.value;
+      if (node) node.textContent = label || 'Parte';
+    }
+
+    function syncCustomName(row) {
+      const select = row.querySelector('[data-summary-name]');
+      const custom = row.querySelector('[data-summary-custom]');
+      const other = select.value === 'Otro';
+      if (other) custom.value = row.dataset.summaryCustom || '';
+      else row.dataset.summaryCustom = custom.value;
+      custom.hidden = !other;
+      summaryTitle(row);
+    }
+
+    function summaryRow(data) {
+      const part = data || {};
+      const rawName = String(part.name || '').trim().slice(0, SUMMARY_LIMITS.name);
+      const known = SUMMARY_NAMES.indexOf(rawName) !== -1;
+      const name = known ? rawName : (rawName ? 'Otro' : 'Verso');
+      const row = document.createElement('div');
+      row.className = 'summary-row';
+      row.setAttribute('data-summary-row', '');
+      row.dataset.summaryCustom = known ? '' : rawName;
+      /* El HTML es fijo: los datos se asignan con value/textContent, nunca se
+         intercalan en innerHTML. Así el texto del resumen jamás se interpreta
+         como HTML. */
+      row.innerHTML = ''
+        + '<div class="summary-row-head">'
+        + '  <span class="summary-index" data-summary-index></span>'
+        + '  <span class="summary-row-title" data-summary-title></span>'
+        + '  <span class="summary-actions">'
+        + '    <button type="button" class="btn ghost icon-only" data-summary-up title="Subir parte" aria-label="Subir parte">' + UI.icon('chevron-up') + '</button>'
+        + '    <button type="button" class="btn ghost icon-only" data-summary-down title="Bajar parte" aria-label="Bajar parte">' + UI.icon('chevron-down') + '</button>'
+        + '    <button type="button" class="btn ghost icon-only" data-summary-dupe title="Duplicar parte" aria-label="Duplicar parte">' + UI.icon('copy') + '</button>'
+        + '    <button type="button" class="btn ghost icon-only" data-summary-remove title="Quitar parte" aria-label="Quitar parte">' + UI.icon('trash') + '</button>'
+        + '  </span>'
+        + '</div>'
+        + '<div class="summary-grid">'
+        + '  <div class="field"><label>Nombre de la parte</label><select data-summary-name aria-label="Nombre de la parte">' + summaryNameOptions(name) + '</select>'
+        + '    <input type="text" data-summary-custom maxlength="' + SUMMARY_LIMITS.name + '" placeholder="Escribí el nombre" aria-label="Nombre de la parte" hidden></div>'
+        + '  <div class="field summary-wide"><label>Frase guía</label><input type="text" data-summary-phrase maxlength="' + SUMMARY_LIMITS.phrase + '" placeholder="Ahí viene en las nubes" aria-label="Frase guía"></div>'
+        + '  <div class="field"><label>Grados</label><input type="text" class="summary-degrees" data-summary-degrees maxlength="' + SUMMARY_LIMITS.degrees + '" placeholder="1 - 1 - 4 - 2" aria-label="Grados"></div>'
+        + '  <div class="field"><label>Nota (opcional)</label><input type="text" data-summary-note maxlength="' + SUMMARY_LIMITS.note + '" placeholder="x2, baja la intensidad…" aria-label="Nota"></div>'
+        + '</div>';
+      row.querySelector('[data-summary-phrase]').value = String(part.phrase || '').trim().slice(0, SUMMARY_LIMITS.phrase);
+      row.querySelector('[data-summary-degrees]').value = String(part.degrees || '').trim().slice(0, SUMMARY_LIMITS.degrees);
+      row.querySelector('[data-summary-note]').value = String(part.note || '').trim().slice(0, SUMMARY_LIMITS.note);
+      syncCustomName(row);
+      return row;
+    }
+
+    function syncSummaryList() {
+      const rows = Array.from(summaryList.querySelectorAll('[data-summary-row]'));
+      rows.forEach((row, index) => {
+        row.querySelector('[data-summary-index]').textContent = String(index + 1);
+        row.querySelector('[data-summary-up]').disabled = index === 0;
+        row.querySelector('[data-summary-down]').disabled = index === rows.length - 1;
+        syncCustomName(row);
+      });
+      summaryEmpty.hidden = rows.length > 0;
+    }
+
+    function addSummaryRow(data, focus, after) {
+      if (summaryList.querySelectorAll('[data-summary-row]').length >= SUMMARY_MAX_PARTS) {
+        UI.toast('El resumen puede tener hasta ' + SUMMARY_MAX_PARTS + ' partes.', 'error');
+        return null;
+      }
+      const row = summaryRow(data);
+      if (after && after.parentNode === summaryList) summaryList.insertBefore(row, after.nextSibling);
+      else summaryList.appendChild(row);
+      syncSummaryList();
+      if (focus) row.querySelector('[data-summary-name]').focus();
+      return row;
+    }
+
+    function summaryValues(row) {
+      const select = row.querySelector('[data-summary-name]');
+      const custom = row.querySelector('[data-summary-custom]');
+      return {
+        name: select.value === 'Otro'
+          ? custom.value.trim().slice(0, SUMMARY_LIMITS.name)
+          : select.value,
+        phrase: row.querySelector('[data-summary-phrase]').value.trim().slice(0, SUMMARY_LIMITS.phrase),
+        degrees: row.querySelector('[data-summary-degrees]').value.trim().slice(0, SUMMARY_LIMITS.degrees),
+        note: row.querySelector('[data-summary-note]').value.trim().slice(0, SUMMARY_LIMITS.note),
+      };
+    }
+
+    function markSummaryInvalid(row, selector) {
+      const input = row.querySelector(selector);
+      if (!input) return;
+      input.classList.add('invalid');
+      input.focus();
+    }
+
+    function collectSummary() {
+      const rows = Array.from(summaryList.querySelectorAll('[data-summary-row]'));
+      const parts = [];
+      rows.forEach((row) => {
+        row.querySelectorAll('.invalid').forEach((input) => input.classList.remove('invalid'));
+      });
+      for (let index = 0; index < rows.length; index += 1) {
+        const row = rows[index];
+        const values = summaryValues(row);
+        if (!values.name && !values.phrase && !values.degrees && !values.note) continue;
+        if (!values.name) {
+          UI.toast('Elegí un nombre para la parte ' + (index + 1) + ' (o escribí uno en «Otro»).', 'error');
+          markSummaryInvalid(row, '[data-summary-custom]');
+          return null;
+        }
+        if (!values.degrees) {
+          UI.toast('Escribí los grados de «' + values.name + '», por ejemplo 1 - 4 - 5.', 'error');
+          markSummaryInvalid(row, '[data-summary-degrees]');
+          return null;
+        }
+        parts.push(values);
+      }
+      return parts;
+    }
+
+    function swapSummaryRows(row, direction) {
+      const sibling = direction < 0 ? row.previousElementSibling : row.nextElementSibling;
+      if (!sibling || !sibling.hasAttribute('data-summary-row')) return;
+      if (direction < 0) summaryList.insertBefore(row, sibling);
+      else summaryList.insertBefore(sibling, row);
+      syncSummaryList();
+    }
+
+    (song.summary || []).forEach((part) => addSummaryRow(part, false));
+    syncSummaryList();
+
+    U.$('#addSummaryPart', container).addEventListener('click', () => addSummaryRow({}, true));
+
+    summaryList.addEventListener('change', (event) => {
+      const select = event.target.closest('[data-summary-name]');
+      if (!select) return;
+      const row = select.closest('[data-summary-row]');
+      syncCustomName(row);
+      event.target.classList.remove('invalid');
+      if (select.value === 'Otro') row.querySelector('[data-summary-custom]').focus();
+    });
+
+    summaryList.addEventListener('input', (event) => {
+      event.target.classList.remove('invalid');
+      const custom = event.target.closest('[data-summary-custom]');
+      if (custom) {
+        const row = custom.closest('[data-summary-row]');
+        row.dataset.summaryCustom = custom.value;
+        summaryTitle(row);
+      }
+    });
+
+    summaryList.addEventListener('click', (event) => {
+      const row = event.target.closest('[data-summary-row]');
+      if (!row) return;
+      if (event.target.closest('[data-summary-up]')) swapSummaryRows(row, -1);
+      else if (event.target.closest('[data-summary-down]')) swapSummaryRows(row, 1);
+      else if (event.target.closest('[data-summary-dupe]')) addSummaryRow(summaryValues(row), false, row);
+      else if (event.target.closest('[data-summary-remove]')) {
+        row.remove();
+        syncSummaryList();
+      }
+    });
+
     function updatePreview() {
       previewTitle.textContent = titleInput.value.trim() || 'Sin título';
       previewKey.innerHTML = keySelect.value ? UI.keyBadge(keySelect.value) : '';
@@ -442,6 +634,8 @@
       }
       const links = collectLinks();
       if (links === null) return;
+      const summary = collectSummary();
+      if (summary === null) return;
       const payload = {
         id: existing ? existing.id : undefined,
         title,
@@ -454,6 +648,7 @@
         difficulty: U.$('#fDifficulty', container).value,
         tags: U.$('#fTags', container).value.split(',').map((tag) => tag.trim()).filter(Boolean),
         links: links,
+        summary: summary,
         notes: U.$('#fNotes', container).value.trim(),
         content: textarea.value.replace(/\r/g, ''),
       };
@@ -462,8 +657,9 @@
       window.location.hash = '#/canciones/' + saved.id;
     });
 
-    if (existing) {
-      U.$('#deleteSong', container).addEventListener('click', async () => {
+    if (existing && Store.canDelete) {
+      const deleteButton = U.$('#deleteSong', container);
+      if (deleteButton) deleteButton.addEventListener('click', async () => {
         const confirmed = await UI.confirm({
           title: 'Eliminar «' + existing.title + '»',
           message: 'Esta acción no se puede deshacer. La canción también se quitará de todos los repertorios.',

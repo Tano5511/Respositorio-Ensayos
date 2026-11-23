@@ -26,9 +26,9 @@
       + (profile.readOnly && profile.sharedBy ? '<div class="tiny text-accent">Compartido por ' + U.esc(profile.sharedBy) + '</div>' : '')
       + '</div>'
       + '<div class="row wrap" style="gap:6px">'
-      + (profile.active ? '' : '<button type="button" class="btn sm primary" data-switch="' + profile.id + '">Usar</button>')
-      + (profile.active && !profile.readOnly ? '<button type="button" class="btn sm ghost" data-rename="' + profile.id + '">Renombrar</button>' : '')
-      + (total > 1 ? '<button type="button" class="btn sm ghost icon-only" data-remove-profile="' + profile.id + '" title="Eliminar perfil" aria-label="Eliminar perfil">' + UI.icon('trash') + '</button>' : '')
+      + (profile.active ? '' : '<button type="button" class="btn sm primary" data-switch="' + U.esc(profile.id) + '">Usar</button>')
+      + (profile.active && !profile.readOnly ? '<button type="button" class="btn sm ghost" data-rename="' + U.esc(profile.id) + '">Renombrar</button>' : '')
+      + (total > 1 ? '<button type="button" class="btn sm ghost icon-only" data-remove-profile="' + U.esc(profile.id) + '" title="Eliminar perfil" aria-label="Eliminar perfil">' + UI.icon('trash') + '</button>' : '')
       + '</div>'
       + '</div>';
   }
@@ -44,7 +44,9 @@
     const account = auth && auth.user ? auth.user : null;
     const church = auth && auth.church ? auth.church : null;
     const canImport = auth ? (editable && auth.isAdmin) : editable;
-    const canUseDangerZone = auth ? (editable && auth.isAdmin) : editable;
+    // La "Zona de riesgo" borra datos: en la nube es solo para admin.
+    // Usa la misma regla que el resto de los botones de borrado.
+    const canUseDangerZone = Store.canDelete;
     let bytes = 0;
     try { bytes = new Blob([Store.exportData()]).size; } catch (error) { bytes = 0; }
     const kb = Math.max(1, Math.round(bytes / 1024));
@@ -169,7 +171,7 @@
       signOutButton.addEventListener('click', async () => {
         const confirmed = await UI.confirm({
           title: 'Cerrar sesión',
-          message: '¿Querés salir de tu cuenta en este dispositivo? Los datos guardados localmente no se borran.',
+          message: '¿Querés salir de tu cuenta en este dispositivo? Se borrarán las canciones, repertorios y datos de iglesia guardados localmente.',
           confirmLabel: 'Cerrar sesión',
           danger: true,
         });

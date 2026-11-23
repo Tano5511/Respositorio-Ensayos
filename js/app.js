@@ -71,7 +71,9 @@
       console.error(error);
       view.innerHTML = '<div class="empty"><div class="empty-icon">' + UI.icon('x') + '</div>'
         + '<h3>Algo salió mal</h3><p>Recarga la página para continuar. Si el problema sigue, revisa la consola.</p>'
-        + '<div class="actions"><button class="btn" onclick="location.reload()">Recargar</button></div></div>';
+        + '<div class="actions"><button type="button" class="btn" data-reload>Recargar</button></div></div>';
+      const reloadButton = view.querySelector('[data-reload]');
+      if (reloadButton) reloadButton.addEventListener('click', () => window.location.reload());
     }
 
     UI.renderNav();
@@ -145,10 +147,18 @@
   }
 
   let syncPromise = null;
+  let syncChurchKey = '';
 
   function syncCloud() {
     if (!window.Auth || !window.Auth.isEnabled || !window.Auth.user || !window.Auth.church) {
       return Promise.resolve();
+    }
+    /* Al cambiar de iglesia (o de usuario) puede quedar una carga anterior en
+       curso: se descarta para no mezclar datos de dos iglesias. */
+    const churchKey = window.Auth.user.id + '|' + window.Auth.church.id;
+    if (churchKey !== syncChurchKey) {
+      syncChurchKey = churchKey;
+      syncPromise = null;
     }
     if (syncPromise) return syncPromise;
     syncPromise = Store.loadCloud().then(() => {

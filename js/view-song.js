@@ -9,6 +9,20 @@
   let autoScrollFrame = null;
   let autoScrollLast = 0;
 
+  /* Preferencia del dispositivo: si el resumen arranca plegado. No guarda
+     datos de la canción ni depende del usuario, funciona también sin cuenta. */
+  const SUMMARY_COLLAPSED_KEY = 'repertorio.summaryCollapsed.v1';
+
+  function summaryCollapsed() {
+    try { return window.localStorage.getItem(SUMMARY_COLLAPSED_KEY) === '1'; }
+    catch (error) { return false; }
+  }
+
+  function setSummaryCollapsed(collapsed) {
+    try { window.localStorage.setItem(SUMMARY_COLLAPSED_KEY, collapsed ? '1' : '0'); }
+    catch (error) { /* sin almacenamiento: el estado dura solo esta visita */ }
+  }
+
   function stopAutoScroll() {
     if (autoScrollFrame) {
       cancelAnimationFrame(autoScrollFrame);
@@ -88,7 +102,7 @@
     const body = lists.length
       ? '<p class="small muted" style="margin-bottom:10px">Elige el repertorio al que quieres añadir la canción. Se agregará al final.</p>'
         + '<div class="stack" style="gap:6px">' + lists.map((list) =>
-          '<button type="button" class="add-song-row" data-list-id="' + list.id + '">'
+          '<button type="button" class="add-song-row" data-list-id="' + U.esc(list.id) + '">'
           + '<span class="main"><strong>' + U.esc(list.name) + '</strong><small>' + U.esc(U.fmtDate(list.date)) + ' · ' + list.items.length + ' canciones</small></span>'
           + UI.icon('plus')
           + '</button>'
@@ -265,13 +279,66 @@
         + '</div>';
     }
 
+    /* El resumen se lee tal cual lo guardó el editor: texto plano, en orden y
+       sin interpretar HTML. Si no hay resumen, solo lo ve quien puede editar. */
+    const summaryParts = Array.isArray(song.summary) ? song.summary : [];
+    const summaryCollapsedNow = summaryCollapsed();
+    let summaryHTML = '';
+
+    if (summaryParts.length) {
+      const summaryItems = summaryParts.map((part, index) => {
+        const name = String(part && part.name ? part.name : '').trim() || 'Parte ' + (index + 1);
+        const phrase = String(part && part.phrase ? part.phrase : '').trim();
+        const degrees = String(part && part.degrees ? part.degrees : '').trim();
+        const note = String(part && part.note ? part.note : '').trim();
+        return '<li class="summary-read-item">'
+          + '<div class="summary-read-head">'
+          + '<span class="summary-read-index">' + (index + 1) + '</span>'
+          + '<span class="summary-read-name">' + U.esc(name) + '</span>'
+          + '</div>'
+          + (phrase ? '<div class="summary-read-phrase">' + U.esc(phrase) + '</div>' : '')
+          + (degrees ? '<div class="summary-read-degrees">' + U.esc(degrees) + '</div>' : '')
+          + (note ? '<div class="summary-read-note">' + U.esc(note) + '</div>' : '')
+          + '</li>';
+      }).join('');
+
+      summaryHTML = '<section class="summary-card" id="summaryCard" aria-labelledby="summaryTitle">'
+        + '<div class="summary-card-head">'
+        + '<h2 id="summaryTitle">' + UI.icon('list') + 'Resumen por parte'
+        + '<span class="summary-count">' + summaryParts.length + '</span></h2>'
+        + '<div class="summary-card-actions no-print">'
+        + (editable
+          ? '<a class="btn ghost sm" href="#/canciones/' + U.esc(song.id) + '/editar" title="Editar el resumen">' + UI.icon('edit') + 'Editar</a>'
+          : '')
+        + '<button type="button" class="summary-toggle" id="summaryToggle"'
+        + ' aria-expanded="' + (summaryCollapsedNow ? 'false' : 'true') + '"'
+        + ' aria-label="' + (summaryCollapsedNow ? 'Desplegar resumen' : 'Plegar resumen') + '"'
+        + ' aria-controls="summaryBody">'
+        + UI.icon(summaryCollapsedNow ? 'chevron-down' : 'chevron-up')
+        + '<span class="summary-toggle-label">' + (summaryCollapsedNow ? 'Desplegar' : 'Plegar') + '</span>'
+        + '</button>'
+        + '</div>'
+        + '</div>'
+        + '<div class="summary-body" id="summaryBody"' + (summaryCollapsedNow ? ' hidden' : '') + '>'
+        + '<ol class="summary-read-list">' + summaryItems + '</ol>'
+        + '</div>'
+        + '</section>';
+    } else if (editable) {
+      summaryHTML = '<section class="summary-card summary-empty no-print" aria-label="Resumen por parte">'
+        + '<div class="summary-card-head"><h2>' + UI.icon('list') + 'Resumen por parte</h2></div>'
+        + '<p class="summary-empty-text">Todavía no cargaste la frase guía y los grados de cada parte.</p>'
+        + '<a class="btn sm" href="#/canciones/' + U.esc(song.id) + '/editar">' + UI.icon('plus') + 'Agregar resumen</a>'
+        + '</section>';
+    }
+
     const hasListenCard = listenLinks.length > 0 || editable;
+    const hasAside = hasListenCard || !!summaryHTML;
     const listenHTML = hasListenCard
       ? '<section class="listen-card no-print" id="listenCard" aria-labelledby="listenTitle">'
         + '<div class="listen-head">'
         + '<h2 id="listenTitle">' + UI.icon('play') + 'Escuchar</h2>'
         + (editable
-          ? '<a class="btn sm" href="#/canciones/' + song.id + '/editar">' + UI.icon('plus') + (listenLinks.length ? 'Editar links' : 'Agregar link') + '</a>'
+          ? '<a class="btn sm" href="#/canciones/' + U.esc(song.id) + '/editar">' + UI.icon('plus') + (listenLinks.length ? 'Editar links' : 'Agregar link') + '</a>'
           : '')
         + '</div>'
         + (listenLinks.length
@@ -304,7 +371,7 @@
       + '      <button type="button" class="reader-toolbar-btn" data-font="1" title="Letra más grande"><span style="font-size:.92rem">A+</span></button>'
       + '      <button type="button" class="reader-toolbar-btn" id="toggleScroll" title="Desplazamiento automático">' + UI.icon('play') + '<span>Auto</span></button>'
       + '      <button type="button" class="reader-toolbar-btn" id="printSong" title="Imprimir o guardar en PDF">' + UI.icon('printer') + '</button>'
-      + (editable ? '      <a class="reader-toolbar-btn" href="#/canciones/' + song.id + '/editar" title="Editar canción">' + UI.icon('edit') + '</a>' : '')
+      + (editable ? '      <a class="reader-toolbar-btn" href="#/canciones/' + U.esc(song.id) + '/editar" title="Editar canción">' + UI.icon('edit') + '</a>' : '')
       + (editable ? '      <button type="button" class="reader-toolbar-btn' + (song.favorite ? ' on' : '') + '" id="favSong" title="Marcar como favorita" aria-pressed="' + (song.favorite ? 'true' : 'false') + '">' + UI.icon('star') + '</button>' : '')
       + (editable ? '      <button type="button" class="reader-toolbar-btn" id="addToSetlist" title="Añadir a un repertorio">' + UI.icon('plus') + '</button>' : '')
       + '    </div>'
@@ -316,13 +383,13 @@
       + '  </div>'
       + '  <div class="reader-scroll" id="readerScroll">'
       + '    <div class="reader-inner">'
-      + '      <div class="reader-layout' + (hasListenCard ? '' : ' no-listen') + '">'
+      + '      <div class="reader-layout' + (hasAside ? '' : ' no-listen') + '">'
       + '      <header class="reader-head">'
       + '        <h1>' + U.esc(song.title) + '</h1>'
       + '        <div class="meta-row">' + UI.keyBadge(soundingKey(), 'Tono') + '<span class="muted small" id="shapeInfo"></span>' + metaChips.join('') + UI.readOnlyChip() + '</div>'
       + (song.notes ? '<p class="note">' + U.esc(song.notes) + '</p>' : '')
       + '      </header>'
-      +      (hasListenCard ? '<aside class="reader-aside">' + listenHTML + '</aside>' : '')
+      +      (hasAside ? '<aside class="reader-aside">' + summaryHTML + listenHTML + '</aside>' : '')
       + '      <div class="song-content' + (state.showChords ? '' : ' no-chords') + '" id="songContent" style="font-size:' + state.fontSize + 'px"></div>'
       + '      <div class="reader-end" aria-hidden="true"></div>'
       + '      </div>'
@@ -341,6 +408,19 @@
     const scrollRow = U.$('#scrollSpeedRow', container);
     const scrollBtn = U.$('#toggleScroll', container);
     const listenPlayer = U.$('#listenPlayer', container);
+    const summaryToggle = U.$('#summaryToggle', container);
+    const summaryBody = U.$('#summaryBody', container);
+
+    function toggleSummary() {
+      if (!summaryToggle || !summaryBody) return;
+      const collapsed = summaryToggle.getAttribute('aria-expanded') === 'true';
+      summaryToggle.setAttribute('aria-expanded', collapsed ? 'false' : 'true');
+      summaryToggle.setAttribute('aria-label', collapsed ? 'Desplegar resumen' : 'Plegar resumen');
+      summaryToggle.innerHTML = UI.icon(collapsed ? 'chevron-down' : 'chevron-up')
+        + '<span class="summary-toggle-label">' + (collapsed ? 'Desplegar' : 'Plegar') + '</span>';
+      summaryBody.hidden = collapsed;
+      setSummaryCollapsed(collapsed);
+    }
 
     /* El reproductor se carga recién al tocar una miniatura o la tarjeta de
        Spotify. Nunca se carga solo al abrir la canción. */
@@ -354,13 +434,19 @@
 
     function listenPlayerHTML(src, title, barLabel, kind, height) {
       const frameStyle = height ? ' style="height:' + height + 'px"' : '';
-      const allow = kind === 'spotify'
-        ? ' allow="autoplay; clipboard-write; encrypted-media; fullscreen; picture-in-picture"'
-        : ' allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture" allowfullscreen';
+      // Permisos mínimos para reproducir: nada de clipping, pantalla completa
+      // ni acelerómetro/giroscopio. El iframe sigue creándose solo al tocar.
+      const sandbox = kind === 'spotify'
+        ? ' sandbox="allow-scripts allow-same-origin"'
+        : ' sandbox="allow-scripts allow-same-origin allow-presentation"';
+      const attributes = sandbox
+        + ' allow="autoplay; encrypted-media"'
+        + ' referrerpolicy="strict-origin-when-cross-origin"'
+        + ' loading="lazy"';
       return '<div class="listen-player-head"><span>' + U.esc(barLabel) + '</span>'
         + '<button type="button" class="btn ghost sm" data-close-embed>Cerrar</button></div>'
         + '<div class="listen-player-frame ' + kind + '"' + frameStyle + '>'
-        + '<iframe src="' + U.esc(src) + '" title="' + U.esc(title) + '"' + allow + '></iframe>'
+        + '<iframe src="' + U.esc(src) + '" title="' + U.esc(title) + '"' + attributes + '></iframe>'
         + '</div>';
     }
 
@@ -431,6 +517,10 @@
     paint();
 
     container.addEventListener('click', (event) => {
+      if (event.target.closest('#summaryToggle')) {
+        toggleSummary();
+        return;
+      }
       const listenBtn = event.target.closest('[data-youtube-id], [data-spotify-src]');
       if (listenBtn) {
         toggleListenPlayer(listenBtn);

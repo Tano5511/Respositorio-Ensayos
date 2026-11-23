@@ -1,11 +1,12 @@
 /* Service worker sencillo para uso sin conexión */
-const CACHE_NAME = 'repertorio-v14';
+const CACHE_NAME = 'repertorio-v20';
 const ASSETS = [
   './',
   './index.html',
   './manifest.webmanifest',
   './assets/styles.css',
   './assets/icon.svg',
+  './js/vendor/supabase-2.119.0.umd.js',
   './js/config.js',
   './js/util.js',
   './js/chords.js',
@@ -21,6 +22,9 @@ const ASSETS = [
   './js/view-members.js',
   './js/app.js',
 ];
+
+// URLs que siempre deben quedarse en caché (sólo archivos estáticos de la app).
+const PRECACHE_URLS = new Set(ASSETS.map((path) => new URL(path, self.location.href).href));
 
 self.addEventListener('install', (event) => {
   event.waitUntil(
@@ -41,6 +45,23 @@ self.addEventListener('activate', (event) => {
     caches.keys()
       .then((keys) => Promise.all(keys.filter((key) => key !== CACHE_NAME).map((key) => caches.delete(key))))
       .then(() => self.clients.claim())
+  );
+});
+
+/* Al cerrar sesión, la app pide que se descarten entradas de caché que no
+   sean archivos estáticos. Nunca debería haber datos de Supabase ahí, pero
+   así la limpieza queda garantizada. */
+self.addEventListener('message', (event) => {
+  if (!event.data || event.data.type !== 'CLEAR_RUNTIME_CACHE') return;
+  event.waitUntil(
+    caches.keys()
+      .then((names) => Promise.all(names.map((name) =>
+        caches.open(name).then((cache) => cache.keys().then((requests) =>
+          Promise.all(requests
+            .filter((request) => !PRECACHE_URLS.has(new URL(request.url).href))
+            .map((request) => cache.delete(request)))
+        ))
+      )))
   );
 });
 

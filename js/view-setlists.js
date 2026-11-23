@@ -142,7 +142,7 @@
           return '<article class="setlist-card fade-in">'
             + '<div class="sl-top">'
             + '<div class="date-badge"><span class="d">' + (date ? date.getDate() : '–') + '</span><span class="m">' + U.esc(U.monthShort(setlist.date)) + '</span></div>'
-            + '<div style="min-width:0;flex:1"><h3><a href="#/repertorios/' + setlist.id + '">' + U.esc(setlist.name) + '</a></h3>'
+            + '<div style="min-width:0;flex:1"><h3><a href="#/repertorios/' + U.esc(setlist.id) + '">' + U.esc(setlist.name) + '</a></h3>'
             + '<div class="tiny muted">' + U.esc(U.fmtDateLong(setlist.date)) + (relative ? ' · ' + relative : '') + '</div></div>'
             + '</div>'
             + '<div class="sl-meta">'
@@ -152,11 +152,11 @@
             + '</div>'
             + (songs.length ? '<div class="sl-songs">' + preview + more + '</div>' : '<div class="tiny muted">Aún sin canciones.</div>')
             + '<div class="sl-actions">'
-            + '<a class="btn sm" href="#/repertorios/' + setlist.id + '">Abrir</a>'
-            + (editable ? '<button type="button" class="btn sm ghost icon-only" data-duplicate="' + setlist.id + '" title="Duplicar" aria-label="Duplicar">' + UI.icon('copy') + '</button>' : '')
-            + (editable ? '<button type="button" class="btn sm ghost icon-only" data-delete="' + setlist.id + '" title="Eliminar" aria-label="Eliminar">' + UI.icon('trash') + '</button>' : '')
+            + '<a class="btn sm" href="#/repertorios/' + U.esc(setlist.id) + '">Abrir</a>'
+            + (editable ? '<button type="button" class="btn sm ghost icon-only" data-duplicate="' + U.esc(setlist.id) + '" title="Duplicar" aria-label="Duplicar">' + UI.icon('copy') + '</button>' : '')
+            + (Store.canDelete ? '<button type="button" class="btn sm ghost icon-only" data-delete="' + U.esc(setlist.id) + '" title="Eliminar" aria-label="Eliminar">' + UI.icon('trash') + '</button>' : '')
             + '<span class="spacer"></span>'
-            + '<a class="btn sm primary" href="#/repertorios/' + setlist.id + '/ensayo">' + UI.icon('play') + 'Ensayo</a>'
+            + '<a class="btn sm primary" href="#/repertorios/' + U.esc(setlist.id) + '/ensayo">' + UI.icon('play') + 'Ensayo</a>'
             + '</div>'
             + '</article>';
         }).join('') + '</div>'
@@ -285,7 +285,7 @@
             return;
           }
           results.innerHTML = songs.map((song) =>
-            '<button type="button" class="add-song-row" data-song-id="' + song.id + '">'
+            '<button type="button" class="add-song-row" data-song-id="' + U.esc(song.id) + '">'
             + '<span class="main"><strong>' + U.esc(song.title) + '</strong>'
             + '<small>' + U.esc(song.author || 'Autor desconocido') + (song.key ? ' · ' + song.key : '') + (song.duration ? ' · ' + U.fmtDuration(song.duration) : '') + '</small></span>'
             + UI.icon('plus') + '</button>'
@@ -332,14 +332,14 @@
       readerParams.set('capo', String(capo));
       readerParams.set('volver', setlist.id);
       const readerHref = '#/canciones/' + song.id + '?' + readerParams.toString();
-      return '<div class="sl-song' + (entry.item.done ? ' done' : '') + '" data-item="' + entry.item.id + '">'
+      return '<div class="sl-song' + (entry.item.done ? ' done' : '') + '" data-item="' + U.esc(entry.item.id) + '">'
         + (editable ? '<div class="handle">'
           + '<button type="button" data-move="up" title="Subir" aria-label="Subir">' + UI.icon('chevron-up') + '</button>'
           + '<button type="button" data-move="down" title="Bajar" aria-label="Bajar">' + UI.icon('chevron-down') + '</button>'
           + '</div>' : '')
         + '<span class="num">' + (index + 1) + '</span>'
         + '<div class="main">'
-        + '<div class="t"><a href="' + readerHref + '">' + U.esc(song.title) + '</a>'
+        + '<div class="t"><a href="' + U.esc(readerHref) + '">' + U.esc(song.title) + '</a>'
         + (key ? UI.keyBadge(key) : '')
         + (capo ? '<span class="chip">Capo ' + capo + '</span>' : '')
         + (entry.item.keyOverride ? '<span class="chip accent">cambio de tono</span>' : '')
@@ -351,9 +351,9 @@
         + (entry.item.notes ? '<div class="tiny text-accent" style="margin-top:2px">' + U.esc(entry.item.notes) + '</div>' : '')
         + '</div>'
         + '<div class="item-actions">'
-        + '<label class="ready-toggle" title="Lista para el ensayo" style="margin-right:2px"><input type="checkbox" data-done="' + entry.item.id + '"' + (entry.item.done ? ' checked' : '') + (editable ? '' : ' disabled') + '><span class="sr-only">Lista</span></label>'
-        + (editable ? '<button type="button" class="btn ghost" data-edit-item="' + entry.item.id + '" title="Ajustes" aria-label="Ajustes">' + UI.icon('settings') + '</button>' : '')
-        + (editable ? '<button type="button" class="btn ghost" data-remove-item="' + entry.item.id + '" title="Quitar" aria-label="Quitar">' + UI.icon('trash') + '</button>' : '')
+        + '<label class="ready-toggle" title="Lista para el ensayo" style="margin-right:2px"><input type="checkbox" data-done="' + U.esc(entry.item.id) + '"' + (entry.item.done ? ' checked' : '') + (editable ? '' : ' disabled') + '><span class="sr-only">Lista</span></label>'
+        + (editable ? '<button type="button" class="btn ghost" data-edit-item="' + U.esc(entry.item.id) + '" title="Ajustes" aria-label="Ajustes">' + UI.icon('settings') + '</button>' : '')
+        + (editable ? '<button type="button" class="btn ghost" data-remove-item="' + U.esc(entry.item.id) + '" title="Quitar" aria-label="Quitar">' + UI.icon('trash') + '</button>' : '')
         + '</div>'
         + '</div>';
     }).join('');
@@ -370,7 +370,7 @@
       + (canShareSetlist() ? '    <button type="button" class="btn" data-share-list>' + UI.icon('share') + 'Compartir repertorio</button>' : '')
       + (editable ? '    <button type="button" class="btn" id="editSetlist">' + UI.icon('edit') + 'Editar</button>' : '')
       + (editable ? '    <button type="button" class="btn ghost icon-only" data-duplicate title="Duplicar" aria-label="Duplicar">' + UI.icon('copy') + '</button>' : '')
-      + (editable ? '    <button type="button" class="btn ghost icon-only" data-delete-list title="Eliminar" aria-label="Eliminar">' + UI.icon('trash') + '</button>' : '')
+      + (Store.canDelete ? '    <button type="button" class="btn ghost icon-only" data-delete-list title="Eliminar" aria-label="Eliminar">' + UI.icon('trash') + '</button>' : '')
       + '  </div>'
       + '</header>'
       + (setlist.notes ? '<div class="card panel mb-2"><div class="row" style="gap:10px;align-items:flex-start">' + UI.icon('edit') + '<div><div class="tiny muted" style="text-transform:uppercase;letter-spacing:.08em;font-weight:700">Notas del servicio</div><p class="small">' + U.esc(setlist.notes) + '</p></div></div></div>' : '')
@@ -522,7 +522,7 @@
       + (song.notes ? '<p class="tiny muted" style="margin-top:10px">' + U.esc(song.notes) + '</p>' : '')
       + '<div class="song-content" style="margin-top:18px">' + content + '</div>'
       + '<div class="rehearsal-actions">'
-      + '<label class="ready-toggle"><input type="checkbox" data-ready="' + entry.item.id + '"' + (entry.item.done ? ' checked' : '') + (opts.editable ? '' : ' disabled') + '> Lista</label>'
+      + '<label class="ready-toggle"><input type="checkbox" data-ready="' + U.esc(entry.item.id) + '"' + (entry.item.done ? ' checked' : '') + (opts.editable ? '' : ' disabled') + '> Lista</label>'
       + '<span class="spacer"></span>'
       + '<button type="button" class="btn ghost" data-prev' + (index === 0 ? ' disabled' : '') + '>' + UI.icon('chevron-left') + 'Anterior</button>'
       + '<button type="button" class="btn primary" data-next' + (index === total - 1 ? ' disabled' : '') + '>Siguiente' + UI.icon('chevron-right') + '</button>'
@@ -541,7 +541,7 @@
     const entries = Store.setlistSongs(setlist);
     if (!entries.length) {
       container.innerHTML = '<div class="empty"><div class="empty-icon">' + UI.icon('play') + '</div><h3>No hay canciones para ensayar</h3>'
-        + '<p>Añade canciones al repertorio primero.</p><div class="actions"><a class="btn primary" href="#/repertorios/' + setlist.id + '">Añadir canciones</a></div></div>';
+        + '<p>Añade canciones al repertorio primero.</p><div class="actions"><a class="btn primary" href="#/repertorios/' + U.esc(setlist.id) + '">Añadir canciones</a></div></div>';
       return;
     }
 
@@ -566,7 +566,7 @@
     container.innerHTML = ''
       + '<div class="rehearsal">'
       + '<div class="rehearsal-top"><div class="inner">'
-      + '<a class="reader-toolbar-btn" href="#/repertorios/' + setlist.id + '" title="Salir del ensayo">' + UI.icon('x') + '</a>'
+      + '<a class="reader-toolbar-btn" href="#/repertorios/' + U.esc(setlist.id) + '" title="Salir del ensayo">' + UI.icon('x') + '</a>'
       + '<div style="min-width:0;display:grid;line-height:1.25"><strong style="font-size:.9rem;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">' + U.esc(setlist.name) + '</strong>'
       + '<small class="muted tiny">Ensayo · ' + U.esc(U.fmtDate(setlist.date)) + '</small></div>'
       + '<div class="progress-track" title="Progreso del ensayo"><span id="rehearsalProgress" style="width:0%"></span></div>'

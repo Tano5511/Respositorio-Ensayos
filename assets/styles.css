@@ -883,6 +883,102 @@ mark { background: var(--accent-soft); color: var(--accent); border-radius: 3px;
   .link-row .link-url { grid-column: 1 / -1; }
 }
 
+/* ---------------- Resumen por parte (editor) ---------------- */
+
+.summary-list { display: grid; gap: 12px; margin-top: 14px; }
+.summary-row {
+  display: grid; gap: 10px; padding: 12px;
+  border: 1px solid var(--border-soft); border-radius: var(--radius);
+  background: color-mix(in srgb, var(--surface-2) 55%, transparent);
+}
+.summary-row-head { display: flex; align-items: center; gap: 8px; min-width: 0; }
+.summary-index {
+  flex: none; display: inline-grid; place-items: center;
+  width: 26px; height: 26px; border-radius: 8px;
+  background: color-mix(in srgb, var(--accent) 16%, var(--surface));
+  color: var(--accent); font-size: .78rem; font-weight: 750;
+}
+.summary-row-title {
+  flex: 1 1 auto; min-width: 0; overflow: hidden;
+  text-overflow: ellipsis; white-space: nowrap;
+  font-size: .9rem; font-weight: 650;
+}
+.summary-actions { display: flex; gap: 4px; flex: none; }
+.summary-actions .btn { min-width: 36px; min-height: 36px; padding: 7px; }
+.summary-actions .btn:disabled { opacity: .35; cursor: not-allowed; }
+.summary-grid { display: grid; gap: 10px; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); }
+.summary-grid .summary-wide { grid-column: 1 / -1; }
+.summary-grid .summary-degrees { font-family: var(--mono); }
+.summary-grid input.invalid, .summary-grid select.invalid { border-color: var(--danger); }
+@media (max-width: 640px) {
+  .summary-grid { grid-template-columns: 1fr; }
+  .summary-actions .btn { min-width: 40px; min-height: 40px; }
+}
+
+/* ---------------- Resumen por parte (lectura) ---------------- */
+
+.summary-card {
+  display: grid; gap: 10px; min-width: 0;
+  padding: 14px;
+  border: 1px solid var(--border-soft); border-radius: var(--radius);
+  background: color-mix(in srgb, var(--surface-2) 65%, transparent);
+}
+.summary-card + .listen-card { margin-top: 12px; }
+.summary-empty { gap: 8px; }
+.summary-card-head {
+  display: flex; align-items: center; justify-content: space-between;
+  gap: 8px; min-width: 0;
+}
+.summary-card-head h2 {
+  display: flex; align-items: center; gap: 7px; min-width: 0;
+  margin: 0; font-size: .78rem; letter-spacing: .08em;
+  text-transform: uppercase; color: var(--muted);
+}
+.summary-card-head h2 .icon { width: 15px; height: 15px; flex: none; }
+.summary-count {
+  display: inline-grid; place-items: center; flex: none;
+  min-width: 20px; height: 20px; padding: 0 5px; border-radius: 6px;
+  background: var(--accent-soft); color: var(--accent);
+  font-size: .72rem; letter-spacing: 0;
+}
+.summary-card-actions { display: flex; align-items: center; gap: 6px; flex: none; }
+.summary-toggle {
+  display: inline-flex; align-items: center; gap: 5px;
+  border: 1px solid var(--border-soft); background: transparent; color: var(--muted);
+  padding: 6px 9px; border-radius: 8px; font-size: .76rem; font-weight: 600;
+}
+.summary-toggle:hover { color: var(--text); border-color: var(--border); }
+.summary-toggle .icon { width: 14px; height: 14px; }
+.summary-body[hidden] { display: none; }
+.summary-read-list { display: grid; gap: 10px; margin: 0; padding: 0; list-style: none; }
+.summary-read-item {
+  display: grid; gap: 4px; min-width: 0;
+  padding: 10px 11px; border-radius: 10px;
+  border: 1px solid var(--border-soft); background: var(--surface);
+}
+.summary-read-head { display: flex; align-items: baseline; gap: 8px; min-width: 0; }
+.summary-read-index {
+  flex: none; font-family: var(--mono); font-size: .8rem; font-weight: 700; color: var(--accent);
+}
+.summary-read-name {
+  min-width: 0; overflow-wrap: anywhere; font-size: 1rem; font-weight: 750; line-height: 1.25;
+}
+.summary-read-phrase {
+  min-width: 0; overflow-wrap: anywhere; font-size: 1.16rem; font-weight: 600; line-height: 1.35;
+}
+.summary-read-degrees {
+  min-width: 0; overflow-wrap: anywhere; font-family: var(--mono);
+  font-size: 1.06rem; font-weight: 700; line-height: 1.4; color: var(--accent);
+}
+.summary-read-note {
+  min-width: 0; overflow-wrap: anywhere; font-size: .88rem; color: var(--muted);
+}
+.summary-empty-text { margin: 0; color: var(--muted); font-size: .84rem; line-height: 1.45; }
+@media (max-width: 899px) {
+  .summary-read-phrase { font-size: 1.2rem; }
+  .summary-read-degrees { font-size: 1.12rem; }
+}
+
 /* ---------------- Escuchar en la canción ---------------- */
 
 .listen-card {
@@ -1028,9 +1124,25 @@ mark { background: var(--accent-soft); color: var(--accent); border-radius: 3px;
   .reader { margin: 0; height: auto; display: block; }
   .reader-scroll { height: auto; overflow: visible; padding: 0; }
   .reader-layout { display: block; }
-  .reader-aside { display: none !important; }
+  /* El resumen se imprime; la tarjeta «Escuchar» sigue siendo no-print. */
+  .reader-aside {
+    display: block !important; position: static !important;
+    max-height: none !important; overflow: visible !important;
+    margin: 0 0 12pt;
+  }
   .reader-end { height: 0; }
   .reader-head h1 { font-size: 20pt; }
+  .summary-card { padding: 0; border: 0; background: none; gap: 6pt; }
+  .summary-card-head h2 { color: #000; font-size: 12pt; }
+  .summary-body[hidden] { display: block !important; }
+  .summary-read-list { gap: 6pt; }
+  .summary-read-item {
+    padding: 0 0 4pt; border: 0; border-bottom: 1px solid #ddd;
+    border-radius: 0; background: none; break-inside: avoid;
+  }
+  .summary-read-phrase { font-size: 12pt; }
+  .summary-read-degrees { font-size: 11pt; color: #000; }
+  .summary-read-note { font-size: 9pt; color: #000; }
   .song-content { font-size: 11pt; }
   .song-content .seg .chord { color: #000; }
   .reader-head .meta-row .chip { border: 1px solid #999; color: #000; background: none; }

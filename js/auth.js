@@ -79,6 +79,25 @@
     try { window.localStorage.setItem(churchStorageKey(), id); } catch (error) { /* sin almacenamiento */ }
   }
 
+  /* Quita todo rastro de sesión guardado por el navegador: tokens de
+     Supabase, iglesia activa y parámetros de autenticación en la URL. */
+  function clearStoredSessionData() {
+    [window.localStorage, window.sessionStorage].forEach((storage) => {
+      try {
+        Object.keys(storage).slice().forEach((key) => {
+          const isToken = /^sb-.*-auth-token$/.test(key);
+          const isChurch = key.indexOf(CHURCH_KEY) === 0;
+          if (isToken || isChurch) storage.removeItem(key);
+        });
+      } catch (error) { /* sin almacenamiento */ }
+    });
+    try {
+      if (window.location.hash && /[?&](access_token|refresh_token|error|error_code|code)=/.test(window.location.hash)) {
+        window.history.replaceState(null, '', window.location.pathname + window.location.search);
+      }
+    } catch (error) { /* sin historial */ }
+  }
+
   function emit(event) {
     listeners.slice().forEach((listener) => {
       try { listener(event); } catch (error) { console.error(error); }
@@ -444,6 +463,7 @@
       state.activeChurchId = null;
       state.inviteCode = '';
       lastToken = '';
+      clearStoredSessionData();
       showGate('login');
       emit('signed-out');
       return;
@@ -629,7 +649,9 @@
     state.user = null;
     state.memberships = [];
     state.activeChurchId = null;
+    state.inviteCode = '';
     lastToken = '';
+    clearStoredSessionData();
     showGate('login');
     emit('signed-out');
   }
