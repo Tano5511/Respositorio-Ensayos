@@ -331,6 +331,9 @@
       if (key) readerParams.set('tono', key);
       readerParams.set('capo', String(capo));
       readerParams.set('volver', setlist.id);
+      // Con el id del repertorio en la ruta, la canción puede mostrar la barra
+      // para pasar a la anterior/siguiente y funciona al recargar o compartir.
+      readerParams.set('repertorio', setlist.id);
       const readerHref = '#/canciones/' + song.id + '?' + readerParams.toString();
       return '<div class="sl-song' + (entry.item.done ? ' done' : '') + '" data-item="' + U.esc(entry.item.id) + '">'
         + (editable ? '<div class="handle">'

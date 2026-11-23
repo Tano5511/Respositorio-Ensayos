@@ -17,10 +17,25 @@
   let sortMode = 'recent';
   let onlyFavorites = false;
 
+  /* Cantidad de repertorios que usan cada canción: reemplaza al viejo
+     orden «Más tocadas», que dependía de un contador que ya no existe. */
+  function usageCounts() {
+    const counts = new Map();
+    Store.state.setlists.forEach((list) => {
+      (Array.isArray(list.items) ? list.items : []).forEach((item) => {
+        if (item && item.songId) counts.set(item.songId, (counts.get(item.songId) || 0) + 1);
+      });
+    });
+    return counts;
+  }
+
   function allSongsSorted() {
     const songs = Store.state.songs.slice();
     if (sortMode === 'title') songs.sort((a, b) => a.title.localeCompare(b.title, 'es'));
-    else if (sortMode === 'played') songs.sort((a, b) => (b.playCount || 0) - (a.playCount || 0) || a.title.localeCompare(b.title, 'es'));
+    else if (sortMode === 'used') {
+      const counts = usageCounts();
+      songs.sort((a, b) => (counts.get(b.id) || 0) - (counts.get(a.id) || 0) || a.title.localeCompare(b.title, 'es'));
+    }
     else if (sortMode === 'key') songs.sort((a, b) => (a.key || 'zz').localeCompare(b.key || 'zz') || a.title.localeCompare(b.title, 'es'));
     else songs.sort((a, b) => (b.updatedAt || '').localeCompare(a.updatedAt || '') || a.title.localeCompare(b.title, 'es'));
     return songs;
@@ -80,7 +95,7 @@
       + '  <select id="sortSongs" style="max-width:190px" aria-label="Ordenar canciones">'
       + '    <option value="recent">Recientes primero</option>'
       + '    <option value="title">Título A–Z</option>'
-      + '    <option value="played">Más tocadas</option>'
+      + '    <option value="used">Más usadas en repertorios</option>'
       + '    <option value="key">Por tonalidad</option>'
       + '  </select>'
       + '  <button type="button" class="chip' + (onlyFavorites ? ' on' : '') + '" id="favFilter">' + UI.icon('star') + ' Solo favoritas</button>'

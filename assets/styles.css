@@ -543,6 +543,52 @@ pre.code-block {
     scrollbar-width: thin;
   }
 }
+
+/* Navegación entre canciones del repertorio (barra fija abajo) */
+.song-nav {
+  position: fixed; z-index: 45; left: 0; right: 0; bottom: 0;
+  background: color-mix(in srgb, var(--surface) 94%, transparent);
+  backdrop-filter: blur(14px);
+  border-top: 1px solid var(--border);
+  padding: 8px 26px calc(8px + env(safe-area-inset-bottom));
+}
+.song-nav-inner {
+  max-width: 1180px; margin: 0 auto;
+  display: flex; align-items: center; gap: 10px;
+}
+.song-nav-btn { flex: 0 1 132px; min-width: 0; }
+.song-nav-btn span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.song-nav-info { flex: 1 1 auto; min-width: 0; text-align: center; display: grid; line-height: 1.25; }
+.song-nav-info strong { font-family: var(--mono); font-size: .85rem; color: var(--accent); }
+.song-nav-info span { font-size: .74rem; color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.song-nav-list { flex: 0 0 auto; }
+.reader.has-song-nav .reader-scroll { padding-bottom: calc(45vh + 64px); }
+
+@media (max-width: 900px) {
+  /* Encima de la barra de pestañas, que ya reserva el área segura. */
+  .song-nav { bottom: calc(52px + env(safe-area-inset-bottom)); padding: 7px 12px; }
+  .song-nav-inner { gap: 6px; }
+  .song-nav-btn { flex: 0 1 86px; padding: 7px 8px; font-size: .76rem; }
+  .song-nav-list { padding: 7px 9px; }
+  .reader.has-song-nav .reader-scroll { padding-bottom: calc(45vh + 120px + env(safe-area-inset-bottom)); }
+}
+
+/* Panel «Lista»: mismo estilo que la navegación del ensayo. */
+.song-nav-list-items { display: grid; gap: 4px; max-height: 52vh; overflow: auto; }
+.song-nav-list-item {
+  display: flex; align-items: center; gap: 10px; width: 100%;
+  padding: 10px 12px; border: 1px solid transparent; border-radius: 10px;
+  background: var(--surface-2); color: var(--text); text-align: left; cursor: pointer;
+}
+.song-nav-list-item:hover { background: var(--surface-3); }
+.song-nav-list-item .num { font-family: var(--mono); font-size: .75rem; color: var(--muted); width: 20px; }
+.song-nav-list-item .title { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 600; }
+.song-nav-list-item.active {
+  background: var(--accent-soft);
+  border-color: color-mix(in srgb, var(--accent) 35%, transparent);
+  color: var(--accent);
+}
+
 .reader-head h1 { font-size: clamp(1.7rem, 1.2rem + 2vw, 2.5rem); }
 .reader-head .meta-row { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin-top: 10px; }
 .reader-head .note { margin-top: 14px; color: var(--muted); font-size: .88rem; }
@@ -1118,7 +1164,7 @@ mark { background: var(--accent-soft); color: var(--accent); border-radius: 3px;
 
 @media print {
   body { background: #fff !important; color: #000 !important; }
-  .sidebar, .tabbar, .reader-bar, .reader-controls-row, .reader-toolbar-btn, .back-link,
+  .sidebar, .tabbar, .song-nav, .reader-bar, .reader-controls-row, .reader-toolbar-btn, .back-link,
   .page-head .head-actions, .editor-toolbar, .preview-pane, .toast-root, .no-print { display: none !important; }
   .view { padding: 0; max-width: none; }
   .reader { margin: 0; height: auto; display: block; }

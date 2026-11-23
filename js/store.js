@@ -11,7 +11,7 @@
   const IMPORT_ASKED_PREFIX = 'repertorio.importAsked.v1.';
   /* Columnas explícitas: chords/lyrics se mantienen porque el buscador y el
      lector trabajan sobre song.content (chordpro) y song.lyrics. */
-  const SONG_COLUMNS = 'id, title, author, key, lyrics, chords, notes, bpm, duration, category, difficulty, tags, links, summary, favorite, play_count, last_played, created_at, updated_at';
+  const SONG_COLUMNS = 'id, title, author, key, lyrics, chords, notes, bpm, duration, category, difficulty, tags, links, summary, favorite, created_at, updated_at';
   const SETLIST_COLUMNS = 'id, name, date, service, notes, items, created_at, updated_at';
 
   /* Límites del resumen por parte. Se aplican al leer y al escribir para que
@@ -274,8 +274,6 @@
       summary: [],
       createdAt: now,
       updatedAt: now,
-      lastPlayed: '',
-      playCount: index === 0 ? 3 : 0,
     }));
 
     const byTitle = {};
@@ -525,8 +523,6 @@
       links: normalizeLinks(song.links),
       summary: normalizeSummary(song.summary),
       favorite: !!song.favorite,
-      play_count: toInt(song.playCount, 0),
-      last_played: song.lastPlayed || null,
     };
   }
 
@@ -546,8 +542,6 @@
       summary: normalizeSummary(row.summary),
       notes: row.notes || '',
       favorite: !!row.favorite,
-      playCount: Number(row.play_count) || 0,
-      lastPlayed: row.last_played || '',
       content: row.chords || '',
       lyrics: row.lyrics || '',
       createdAt: row.created_at || '',
@@ -662,15 +656,6 @@
     const row = toSongRow(song, churchId);
     return queueOp('song:' + song.id, async () => {
       const { error } = await authClient().from('songs').upsert(row, { onConflict: 'id' });
-      if (error) throw error;
-    }).catch((error) => handleWriteError(error, 'la canción'));
-  }
-
-  function writeSongFields(id, fields) {
-    if (!cloudEnabled()) return Promise.resolve();
-    const churchId = activeChurchId();
-    return queueOp('song:' + id, async () => {
-      const { error } = await authClient().from('songs').update(fields).eq('id', id).eq('church_id', churchId);
       if (error) throw error;
     }).catch((error) => handleWriteError(error, 'la canción'));
   }
@@ -1046,8 +1031,6 @@
         summary: normalizeSummary(raw.summary),
         notes: raw.notes || '',
         favorite: !!raw.favorite,
-        playCount: toInt(raw.playCount, 0),
-        lastPlayed: raw.lastPlayed || '',
         content: raw.content || '',
         createdAt: raw.createdAt || new Date().toISOString(),
         updatedAt: new Date().toISOString(),
@@ -1220,7 +1203,10 @@
       song.links = normalizeLinks(song.links);
       song.summary = normalizeSummary(song.summary);
       song.favorite = !!song.favorite;
-      song.playCount = Number(song.playCount) || 0;
+      /* Respaldos de versiones anteriores pueden traer estos contadores:
+         se ignoran para que no vuelvan a guardarse ni exportarse. */
+      delete song.playCount;
+      delete song.lastPlayed;
       song.capo = Number(song.capo) || 0;
       song.bpm = Number(song.bpm) || 0;
       song.duration = Number(song.duration) || 0;
@@ -1332,8 +1318,6 @@
         favorite: false,
         notes: '',
         tags: [],
-        playCount: 0,
-        lastPlayed: '',
         createdAt: timestamp,
       }, payload);
       song.id = cloudEnabled() ? uuid() : window.U.uid('song');
@@ -1343,6 +1327,8 @@
     song.tags = Array.isArray(song.tags) ? song.tags : [];
     song.links = normalizeLinks(song.links);
     song.summary = normalizeSummary(song.summary);
+    delete song.playCount;
+    delete song.lastPlayed;
     song.capo = Number(song.capo) || 0;
     song.bpm = Number(song.bpm) || 0;
     song.duration = Number(song.duration) || 0;
@@ -1379,20 +1365,6 @@
     commit();
     writeSong(song);
     return song.favorite;
-  }
-
-  function touchSong(id) {
-    if (!canEdit()) return;
-    const song = getSong(id);
-    if (!song) return;
-    song.playCount = (Number(song.playCount) || 0) + 1;
-    song.lastPlayed = new Date().toISOString();
-    if (cloudEnabled()) {
-      writeCloudCache();
-      writeSongFields(song.id, { play_count: song.playCount, last_played: song.lastPlayed });
-      return;
-    }
-    persist();
   }
 
   /* ---------- Repertorios ---------- */
@@ -1635,6 +1607,15 @@
     return true;
   }
 
+  /* Los respaldos nuevos no incluyen contadores de reproducción. Si el
+     archivo viene de una versión anterior, esos campos se descartan. */
+  function songForBackup(song) {
+    const clean = Object.assign({}, song);
+    delete clean.playCount;
+    delete clean.lastPlayed;
+    return clean;
+  }
+
   function exportProfile() {
     if (cloudEnabled()) {
       const church = window.Auth.church;
@@ -1646,7 +1627,7 @@
         profileId: church ? church.id : '',
         profileName: church ? church.name : '',
         sharedBy: church ? church.name : '',
-        songs: state.songs,
+        songs: state.songs.map(songForBackup),
         setlists: state.setlists,
         settings: state.settings,
       }, null, 2);
@@ -1660,7 +1641,7 @@
       profileId: profile ? (profile.sourceId || profile.id) : '',
       profileName: profile ? profile.name : '',
       sharedBy: profile ? (profile.sharedBy || profile.name) : '',
-      songs: state.songs,
+      songs: state.songs.map(songForBackup),
       setlists: state.setlists,
       settings: state.settings,
     }, null, 2);
@@ -1788,7 +1769,7 @@
       app: 'repertorio',
       version: 1,
       exportedAt: new Date().toISOString(),
-      songs: state.songs,
+      songs: state.songs.map(songForBackup),
       setlists: state.setlists,
       settings: state.settings,
     }, null, 2);
@@ -1870,7 +1851,7 @@
     state,
     load, loadCloud, subscribe, clearSession,
     pendingImport, importLocal, skipImport,
-    getSong, saveSong, deleteSong, toggleFavorite, touchSong,
+    getSong, saveSong, deleteSong, toggleFavorite,
     getSetlist, saveSetlist, deleteSetlist, duplicateSetlist,
     addSongToSetlist, updateSetlistItem, removeSetlistItem, moveSetlistItem,
     setlistSongs, setlistDuration,

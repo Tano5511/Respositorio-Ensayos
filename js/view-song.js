@@ -160,7 +160,6 @@
     if (!song) { notFound(container); return; }
 
     const editable = Store.canEdit;
-    Store.touchSong(songId);
 
     const baseKey = song.key || '';
     const params = hashParams();
@@ -172,6 +171,31 @@
         opts.backHref = '#/repertorios/' + setlist.id;
         opts.backLabel = setlist.name;
       }
+    }
+
+    /* Navegación dentro de un repertorio. Sólo existe cuando la ruta trae
+       ?repertorio=ID; si el repertorio no existe, está vacío o la canción ya
+       no está en él, no se muestra nada. */
+    const navSetlistId = params.get('repertorio') || '';
+    const navSetlist = navSetlistId ? Store.getSetlist(navSetlistId) : null;
+    const navEntries = navSetlist ? Store.setlistSongs(navSetlist) : [];
+    const navIndex = navEntries.findIndex((entry) => entry.song && entry.song.id === song.id);
+    const hasSongNav = !!navSetlist && navEntries.length > 0 && navIndex >= 0;
+
+    /* Arma la ruta de otra canción con el tono/capo que tiene en el
+       repertorio, igual que hace el listado del repertorio. */
+    function navHref(entry) {
+      const targetParams = new URLSearchParams();
+      const targetKey = entry.item.keyOverride || entry.song.key || '';
+      if (targetKey) targetParams.set('tono', targetKey);
+      const override = entry.item.capoOverride;
+      const targetCapo = override !== '' && override !== undefined && override !== null
+        ? (Number(override) || 0)
+        : (Number(entry.song.capo) || 0);
+      targetParams.set('capo', String(targetCapo));
+      targetParams.set('volver', navSetlist.id);
+      targetParams.set('repertorio', navSetlist.id);
+      return '#/canciones/' + entry.song.id + '?' + targetParams.toString();
     }
 
     const state = {
@@ -348,8 +372,18 @@
         + '</section>'
       : '';
 
+    const songNavHTML = hasSongNav
+      ? '<nav class="song-nav no-print" id="songNav" aria-label="Navegación del repertorio">'
+        + '<div class="song-nav-inner">'
+        + '<button type="button" class="btn sm song-nav-btn" data-song-nav="prev"' + (navIndex === 0 ? ' disabled' : '') + '>' + UI.icon('chevron-left') + '<span>Anterior</span></button>'
+        + '<div class="song-nav-info"><strong>' + (navIndex + 1) + ' de ' + navEntries.length + '</strong><span>' + U.esc(navSetlist.name) + '</span></div>'
+        + '<button type="button" class="btn sm song-nav-btn" data-song-nav="next"' + (navIndex === navEntries.length - 1 ? ' disabled' : '') + '><span>Siguiente</span>' + UI.icon('chevron-right') + '</button>'
+        + '<button type="button" class="btn sm ghost song-nav-list" id="songNavList" aria-haspopup="dialog">' + UI.icon('list') + '<span>Lista</span></button>'
+        + '</div></nav>'
+      : '';
+
     container.innerHTML = ''
-      + '<div class="reader">'
+      + '<div class="reader' + (hasSongNav ? ' has-song-nav' : '') + '">'
       + '  <div class="reader-bar no-print">'
       + '    <a class="back-link" style="margin:0" href="' + U.esc(opts.backHref || '#/canciones') + '">' + UI.icon('arrow-left') + U.esc(opts.backLabel || 'Canciones') + '</a>'
       + '    <div class="reader-title"><strong id="readerTitle">' + U.esc(song.title) + '</strong><small>' + U.esc(song.author || 'Autor desconocido') + '</small></div>'
@@ -395,6 +429,7 @@
       + '      </div>'
       + '    </div>'
       + '  </div>'
+      + songNavHTML
       + '</div>';
 
     document.title = song.title + ' · Repertorio';
@@ -430,6 +465,41 @@
       listenPlayer.innerHTML = '';
       const expanded = U.$('#listenCard [aria-expanded="true"]', container);
       if (expanded) expanded.setAttribute('aria-expanded', 'false');
+    }
+
+    /* Cambia de canción dentro del repertorio: cierra el reproductor, vuelve
+       arriba y deja que la ruta nueva reconstruya la vista. El plegado del
+       resumen ya se guarda en localStorage, así que se conserva solo. */
+    function goToSong(index) {
+      const entry = navEntries[index];
+      if (!entry || !entry.song || !hasSongNav) return;
+      closeListenPlayer();
+      scrollEl.scrollTop = 0;
+      window.scrollTo({ top: 0, behavior: 'auto' });
+      window.location.hash = navHref(entry);
+    }
+
+    function openSongNavList() {
+      if (!hasSongNav) return;
+      const items = navEntries.map((entry, index) =>
+        '<button type="button" class="song-nav-list-item' + (index === navIndex ? ' active' : '') + '"'
+        + ' data-song-jump="' + index + '"' + (index === navIndex ? ' aria-current="true"' : '') + '>'
+        + '<span class="num">' + (index + 1) + '</span>'
+        + '<span class="title">' + U.esc(entry.song.title) + '</span>'
+        + '</button>').join('');
+      UI.modal({
+        title: navSetlist.name,
+        subtitle: 'Canciones del repertorio',
+        body: '<div class="song-nav-list-items">' + items + '</div>',
+        onMount: (box, close) => {
+          box.addEventListener('click', (event) => {
+            const jump = event.target.closest('[data-song-jump]');
+            if (!jump) return;
+            close();
+            goToSong(Number(jump.dataset.songJump));
+          });
+        },
+      });
     }
 
     function listenPlayerHTML(src, title, barLabel, kind, height) {
@@ -517,6 +587,15 @@
     paint();
 
     container.addEventListener('click', (event) => {
+      const songNavBtn = event.target.closest('[data-song-nav]');
+      if (songNavBtn) {
+        goToSong(navIndex + (songNavBtn.dataset.songNav === 'next' ? 1 : -1));
+        return;
+      }
+      if (event.target.closest('#songNavList')) {
+        openSongNavList();
+        return;
+      }
       if (event.target.closest('#summaryToggle')) {
         toggleSummary();
         return;
@@ -635,6 +714,34 @@
       }
     }, { passive: true });
 
+    /* Deslizamiento horizontal opcional para cambiar de canción. No se
+       intercepta el scroll vertical ni el scroll lateral de «Escuchar». */
+    let swipeStart = null;
+    function onNavTouchStart(event) {
+      if (!hasSongNav || event.touches.length !== 1) return;
+      const target = event.target;
+      if (target.closest && target.closest('.listen-scroll, .song-nav, button, a, input, select, textarea')) return;
+      const touch = event.touches[0];
+      swipeStart = { x: touch.clientX, y: touch.clientY, time: Date.now() };
+    }
+    function onNavTouchEnd(event) {
+      if (!swipeStart) return;
+      const start = swipeStart;
+      swipeStart = null;
+      const touch = event.changedTouches[0];
+      if (!touch) return;
+      const dx = touch.clientX - start.x;
+      const dy = touch.clientY - start.y;
+      if (Date.now() - start.time > 700 || Math.abs(dx) < 70 || Math.abs(dx) < Math.abs(dy) * 1.5) return;
+      goToSong(navIndex + (dx < 0 ? 1 : -1));
+    }
+    function onNavTouchCancel() { swipeStart = null; }
+    if (hasSongNav) {
+      scrollEl.addEventListener('touchstart', onNavTouchStart, { passive: true });
+      scrollEl.addEventListener('touchend', onNavTouchEnd, { passive: true });
+      scrollEl.addEventListener('touchcancel', onNavTouchCancel, { passive: true });
+    }
+
     function onKey(event) {
       if (event.defaultPrevented) return;
       const tag = (event.target.tagName || '').toLowerCase();
@@ -654,6 +761,12 @@
     container.__cleanup = () => {
       stopAutoScroll();
       document.removeEventListener('keydown', onKey);
+      if (hasSongNav) {
+        scrollEl.removeEventListener('touchstart', onNavTouchStart);
+        scrollEl.removeEventListener('touchend', onNavTouchEnd);
+        scrollEl.removeEventListener('touchcancel', onNavTouchCancel);
+      }
+      closeListenPlayer();
     };
   }
 
