@@ -19,7 +19,8 @@
   const SUMMARY_MAX_PARTS = 40;
   const SUMMARY_NAME_MAX = 40;
   const SUMMARY_PHRASE_MAX = 120;
-  const SUMMARY_DEGREES_MAX = 200;
+  const SUMMARY_DEGREES_MAX = 400;
+  const SUMMARY_DEGREES_MAX_LINES = 8;
   const SUMMARY_NOTE_MAX = 120;
   const SYNC_PAGE_SIZE = 200;
   const MAX_SYNC_SONGS = 5000;
@@ -471,6 +472,23 @@
     return String(value).trim().slice(0, max);
   }
 
+  /* Los grados pueden tener un renglón por sucesión. Se conservan los saltos
+     de línea (normalizando CRLF/CR a LF), se descartan solo caracteres de
+     control peligrosos y se quitan los espacios sobrantes al final de cada
+     línea. Nunca se interpreta HTML: sigue siendo texto plano. */
+  function summaryDegreesText(value) {
+    if (value === null || value === undefined || typeof value === 'object') return '';
+    return String(value)
+      .replace(/\r\n?/g, '\n')
+      .replace(/[\u0000-\u0008\u000B\u000C\u000E-\u001F\u007F]/g, '')
+      .replace(/^[ \t\n]+|[ \t\n]+$/g, '')
+      .slice(0, SUMMARY_DEGREES_MAX)
+      .split('\n')
+      .slice(0, SUMMARY_DEGREES_MAX_LINES)
+      .map((line) => line.replace(/[ \t]+$/g, ''))
+      .join('\n');
+  }
+
   /* Resumen por parte: una lista ordenada de objetos
      { name, phrase, degrees, note }. Se acepta también `customName` por si
      viene de un respaldo donde el nombre libre se guardó aparte. Todo se
@@ -486,7 +504,7 @@
       const custom = summaryText(item.customName, SUMMARY_NAME_MAX);
       if ((!name || name === 'Otro') && custom) name = custom;
       const phrase = summaryText(item.phrase, SUMMARY_PHRASE_MAX);
-      const degrees = summaryText(item.degrees, SUMMARY_DEGREES_MAX);
+      const degrees = summaryDegreesText(item.degrees);
       const note = summaryText(item.note, SUMMARY_NOTE_MAX);
       if (!name && !phrase && !degrees && !note) continue;
       parts.push({ name: name, phrase: phrase, degrees: degrees, note: note });

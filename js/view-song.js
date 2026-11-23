@@ -313,7 +313,10 @@
       const summaryItems = summaryParts.map((part, index) => {
         const name = String(part && part.name ? part.name : '').trim() || 'Parte ' + (index + 1);
         const phrase = String(part && part.phrase ? part.phrase : '').trim();
-        const degrees = String(part && part.degrees ? part.degrees : '').trim();
+        /* Los saltos de línea se mantienen: se escapan como texto y el CSS
+           los muestra con white-space: pre-line. */
+        const degrees = String(part && part.degrees ? part.degrees : '')
+          .replace(/\r\n?/g, '\n').replace(/^\n+|\n+$/g, '');
         const note = String(part && part.note ? part.note : '').trim();
         return '<li class="summary-read-item">'
           + '<div class="summary-read-head">'

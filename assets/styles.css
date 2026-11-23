@@ -954,8 +954,11 @@ mark { background: var(--accent-soft); color: var(--accent); border-radius: 3px;
 .summary-actions .btn:disabled { opacity: .35; cursor: not-allowed; }
 .summary-grid { display: grid; gap: 10px; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); }
 .summary-grid .summary-wide { grid-column: 1 / -1; }
-.summary-grid .summary-degrees { font-family: var(--mono); }
-.summary-grid input.invalid, .summary-grid select.invalid { border-color: var(--danger); }
+.summary-grid .summary-degrees {
+  min-width: 0; max-width: 100%; font-family: var(--mono);
+  line-height: 1.5; overflow: auto;
+}
+.summary-grid input.invalid, .summary-grid select.invalid, .summary-grid textarea.invalid { border-color: var(--danger); }
 @media (max-width: 640px) {
   .summary-grid { grid-template-columns: 1fr; }
   .summary-actions .btn { min-width: 40px; min-height: 40px; }
@@ -1013,8 +1016,9 @@ mark { background: var(--accent-soft); color: var(--accent); border-radius: 3px;
   min-width: 0; overflow-wrap: anywhere; font-size: 1.16rem; font-weight: 600; line-height: 1.35;
 }
 .summary-read-degrees {
-  min-width: 0; overflow-wrap: anywhere; font-family: var(--mono);
-  font-size: 1.06rem; font-weight: 700; line-height: 1.4; color: var(--accent);
+  min-width: 0; overflow-wrap: anywhere; white-space: pre-line;
+  font-family: var(--mono); font-size: 1.16rem; font-weight: 700;
+  line-height: 1.55; color: var(--accent);
 }
 .summary-read-note {
   min-width: 0; overflow-wrap: anywhere; font-size: .88rem; color: var(--muted);
@@ -1022,7 +1026,7 @@ mark { background: var(--accent-soft); color: var(--accent); border-radius: 3px;
 .summary-empty-text { margin: 0; color: var(--muted); font-size: .84rem; line-height: 1.45; }
 @media (max-width: 899px) {
   .summary-read-phrase { font-size: 1.2rem; }
-  .summary-read-degrees { font-size: 1.12rem; }
+  .summary-read-degrees { font-size: 1.22rem; }
 }
 
 /* ---------------- Escuchar en la canción ---------------- */
@@ -1187,7 +1191,7 @@ mark { background: var(--accent-soft); color: var(--accent); border-radius: 3px;
     border-radius: 0; background: none; break-inside: avoid;
   }
   .summary-read-phrase { font-size: 12pt; }
-  .summary-read-degrees { font-size: 11pt; color: #000; }
+  .summary-read-degrees { font-size: 12pt; line-height: 1.4; color: #000; white-space: pre-line; }
   .summary-read-note { font-size: 9pt; color: #000; }
   .song-content { font-size: 11pt; }
   .song-content .seg .chord { color: #000; }

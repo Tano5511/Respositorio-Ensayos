@@ -11,7 +11,8 @@
   ];
   const DIFFICULTIES = ['Fácil', 'Media', 'Avanzada'];
   const SUMMARY_NAMES = ['Intro', 'Verso', 'Pre-coro', 'Coro', 'Puente', 'Instrumental', 'Final', 'Otro'];
-  const SUMMARY_LIMITS = { name: 40, phrase: 120, degrees: 200, note: 120 };
+  const SUMMARY_LIMITS = { name: 40, phrase: 120, degrees: 400, note: 120 };
+  const SUMMARY_DEGREES_MAX_LINES = 8;
   const SUMMARY_MAX_PARTS = 40;
 
   let sortMode = 'recent';
@@ -302,7 +303,7 @@
       + '      </div>'
       + '      <div id="summaryParts" class="summary-list"></div>'
       + '      <p class="tiny muted" id="summaryEmpty" style="margin-top:12px">Todavía no agregaste partes del resumen.</p>'
-      + '      <p class="tiny muted" style="margin-top:10px">Los grados son texto libre, por ejemplo <code>1 - 1 - 4 - 2</code> o <code>1 - 2 - 6 - 4 | 1 - 2 - 6 - 4</code>.</p>'
+      + '      <p class="tiny muted" style="margin-top:10px">En «Grados» podés poner una sucesión por línea (Enter baja de línea), por ejemplo <code>1 - 2 - 4 - 5</code> y abajo <code>1 - 2 - 5 - 5</code>. Hasta ' + SUMMARY_DEGREES_MAX_LINES + ' renglones por parte.</p>'
       + '    </div>'
       + '  </div>'
       + '  <aside class="preview-pane">'
@@ -452,6 +453,28 @@
       summaryTitle(row);
     }
 
+    /* Igual que en Store: conserva saltos de línea y descarta solo caracteres
+       peligrosos o espacios sobrantes al final de cada renglón. */
+    function degreesText(value) {
+      return String(value === null || value === undefined ? '' : value)
+        .replace(/\r\n?/g, '\n')
+        .replace(/[\u0000-\u0008\u000B\u000C\u000E-\u001F\u007F]/g, '')
+        .replace(/^[ \t\n]+|[ \t\n]+$/g, '')
+        .slice(0, SUMMARY_LIMITS.degrees)
+        .split('\n')
+        .slice(0, SUMMARY_DEGREES_MAX_LINES)
+        .map((line) => line.replace(/[ \t]+$/g, ''))
+        .join('\n');
+    }
+
+    /* Arranca en dos filas y crece con el contenido, con un tope para que no
+       rompa el formulario en pantallas chicas. */
+    function autosizeDegrees(field) {
+      if (!field) return;
+      field.style.height = 'auto';
+      field.style.height = Math.min(field.scrollHeight, 320) + 'px';
+    }
+
     function summaryRow(data) {
       const part = data || {};
       const rawName = String(part.name || '').trim().slice(0, SUMMARY_LIMITS.name);
@@ -479,11 +502,11 @@
         + '  <div class="field"><label>Nombre de la parte</label><select data-summary-name aria-label="Nombre de la parte">' + summaryNameOptions(name) + '</select>'
         + '    <input type="text" data-summary-custom maxlength="' + SUMMARY_LIMITS.name + '" placeholder="Escribí el nombre" aria-label="Nombre de la parte" hidden></div>'
         + '  <div class="field summary-wide"><label>Frase guía</label><input type="text" data-summary-phrase maxlength="' + SUMMARY_LIMITS.phrase + '" placeholder="Ahí viene en las nubes" aria-label="Frase guía"></div>'
-        + '  <div class="field"><label>Grados</label><input type="text" class="summary-degrees" data-summary-degrees maxlength="' + SUMMARY_LIMITS.degrees + '" placeholder="1 - 1 - 4 - 2" aria-label="Grados"></div>'
+        + '  <div class="field"><label>Grados</label><textarea rows="2" class="summary-degrees" data-summary-degrees maxlength="' + SUMMARY_LIMITS.degrees + '" placeholder="1 - 2 - 4 - 5&#10;1 - 2 - 5 - 5" aria-label="Grados" spellcheck="false"></textarea></div>'
         + '  <div class="field"><label>Nota (opcional)</label><input type="text" data-summary-note maxlength="' + SUMMARY_LIMITS.note + '" placeholder="x2, baja la intensidad…" aria-label="Nota"></div>'
         + '</div>';
       row.querySelector('[data-summary-phrase]').value = String(part.phrase || '').trim().slice(0, SUMMARY_LIMITS.phrase);
-      row.querySelector('[data-summary-degrees]').value = String(part.degrees || '').trim().slice(0, SUMMARY_LIMITS.degrees);
+      row.querySelector('[data-summary-degrees]').value = degreesText(part.degrees);
       row.querySelector('[data-summary-note]').value = String(part.note || '').trim().slice(0, SUMMARY_LIMITS.note);
       syncCustomName(row);
       return row;
@@ -495,6 +518,7 @@
         row.querySelector('[data-summary-index]').textContent = String(index + 1);
         row.querySelector('[data-summary-up]').disabled = index === 0;
         row.querySelector('[data-summary-down]').disabled = index === rows.length - 1;
+        autosizeDegrees(row.querySelector('[data-summary-degrees]'));
         syncCustomName(row);
       });
       summaryEmpty.hidden = rows.length > 0;
@@ -521,7 +545,7 @@
           ? custom.value.trim().slice(0, SUMMARY_LIMITS.name)
           : select.value,
         phrase: row.querySelector('[data-summary-phrase]').value.trim().slice(0, SUMMARY_LIMITS.phrase),
-        degrees: row.querySelector('[data-summary-degrees]').value.trim().slice(0, SUMMARY_LIMITS.degrees),
+        degrees: degreesText(row.querySelector('[data-summary-degrees]').value),
         note: row.querySelector('[data-summary-note]').value.trim().slice(0, SUMMARY_LIMITS.note),
       };
     }
@@ -580,8 +604,18 @@
       if (select.value === 'Otro') row.querySelector('[data-summary-custom]').focus();
     });
 
+    summaryList.addEventListener('keydown', (event) => {
+      const field = event.target.closest('[data-summary-degrees]');
+      if (!field || event.key !== 'Enter') return;
+      /* En un textarea Enter debe agregar una línea, nunca enviar el formulario. */
+      event.preventDefault();
+      event.stopPropagation();
+      insertAtCursor(field, '\n');
+    });
+
     summaryList.addEventListener('input', (event) => {
       event.target.classList.remove('invalid');
+      autosizeDegrees(event.target.closest('[data-summary-degrees]'));
       const custom = event.target.closest('[data-summary-custom]');
       if (custom) {
         const row = custom.closest('[data-summary-row]');
