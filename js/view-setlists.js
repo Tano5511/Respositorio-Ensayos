@@ -49,13 +49,22 @@
       UI.toast(Store.readOnlyMessage, 'error');
       return null;
     }
+    const Services = window.Services;
+    const useServices = !!(Services && Services.available);
+    const activeName = Services && Services.active ? Services.active.name : '';
     const data = existing || {
       name: '',
       date: U.todayISO(),
-      service: 'Culto dominical',
+      service: useServices && activeName ? activeName : 'Culto dominical',
       notes: '',
     };
-    const services = Store.allServices();
+    const legacyServices = Store.allServices();
+    const serviceField = useServices
+      ? '<div class="field"><label>Panel</label><input type="text" value="' + U.esc(activeName || 'Todos los servicios') + '" disabled>'
+        + '<p class="tiny muted">Elegí el panel con el selector «Servicios» del costado.</p></div>'
+      : '<div class="field"><label for="slService">Tipo de servicio</label><input id="slService" type="text" list="serviceOptions" value="' + U.esc(data.service) + '">'
+        + '<datalist id="serviceOptions">' + legacyServices.map((service) => '<option value="' + U.esc(service) + '"></option>').join('') + '</datalist>'
+        + '</div>';
     UI.modal({
       title: existing ? 'Editar repertorio' : 'Nuevo repertorio',
       subtitle: existing ? 'Actualiza los datos del servicio.' : 'Organiza las canciones de un culto o ensayo.',
@@ -63,9 +72,7 @@
         + '<div class="field"><label for="slName">Nombre *</label><input id="slName" type="text" value="' + U.esc(data.name) + '" placeholder="Culto dominical"></div>'
         + '<div class="form-grid">'
         + '<div class="field"><label for="slDate">Fecha</label><input id="slDate" type="date" value="' + U.esc(data.date) + '"></div>'
-        + '<div class="field"><label for="slService">Tipo de servicio</label><input id="slService" type="text" list="serviceOptions" value="' + U.esc(data.service) + '">'
-        + '<datalist id="serviceOptions">' + services.map((service) => '<option value="' + U.esc(service) + '"></option>').join('') + '</datalist>'
-        + '</div></div>'
+        + serviceField + '</div>'
         + '<div class="field"><label for="slNotes">Notas generales</label><textarea id="slNotes" rows="3" placeholder="Indicaciones para el equipo…">' + U.esc(data.notes) + '</textarea></div>'
         + '</div>',
       actions: [
@@ -84,7 +91,8 @@
             const payload = {
               name,
               date: box.querySelector('#slDate').value || U.todayISO(),
-              service: box.querySelector('#slService').value.trim() || 'Culto dominical',
+              service: useServices ? (data.service || activeName || 'General')
+                : ((box.querySelector('#slService') || {}).value || '').trim() || 'Culto dominical',
               notes: box.querySelector('#slNotes').value.trim(),
             };
             if (existing) payload.id = existing.id;

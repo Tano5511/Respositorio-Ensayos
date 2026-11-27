@@ -46,7 +46,7 @@
     const canImport = auth ? (editable && auth.isAdmin) : editable;
     // La "Zona de riesgo" borra datos: en la nube es solo para admin.
     // Usa la misma regla que el resto de los botones de borrado.
-    const canUseDangerZone = Store.canDelete;
+    const canUseDangerZone = auth ? !!auth.isAdmin : Store.canDelete;
     let bytes = 0;
     try { bytes = new Blob([Store.exportData()]).size; } catch (error) { bytes = 0; }
     const kb = Math.max(1, Math.round(bytes / 1024));
@@ -97,6 +97,7 @@
           + '    <p class="tiny muted" style="margin-top:10px">Al unirte con el código de una iglesia en la que ya estés, verás «Ya sos miembro» y no se creará una membresía duplicada.</p>'
           + '  </section>'
         : '')
+      + window.ServicesView.cardHTML()
       + (auth
         ? ''
         : '  <section class="card settings-card profile-card">'
@@ -172,6 +173,8 @@
           + '  </section>'
         : '')
       + '</div>';
+
+    window.ServicesView.bind(container);
 
     /* ---------- Cuenta ---------- */
 

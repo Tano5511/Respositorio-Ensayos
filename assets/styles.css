@@ -159,6 +159,13 @@ img, svg { display: block; }
     max-width: calc(100% - 32px);
   }
   .church-switcher-mobile[hidden] { display: none; }
+  .church-switcher-mobile.service-switcher { margin-top: 8px; }
+}
+.service-switcher::before {
+  content: '◆';
+  color: var(--accent);
+  font-size: .62rem;
+  margin-right: 5px;
 }
 
 .nav { display: flex; flex-direction: column; gap: 3px; }
@@ -1347,5 +1354,22 @@ body.auth-locked .skip-link { display: none !important; }
   .auth-screen { padding: 18px 12px calc(24px + env(safe-area-inset-bottom)); }
   .auth-card { padding: 18px; }
   .auth-head h1 { font-size: 1.22rem; }
+}
+
+/* Servicios / paneles */
+.service-list { display: flex; flex-direction: column; }
+.service-dot {
+  display: inline-block; width: 9px; height: 9px; border-radius: 50%;
+  flex: none; box-shadow: 0 0 0 2px color-mix(in srgb, var(--surface) 80%, transparent);
+}
+.member-role-row {
+  display: flex; align-items: center; justify-content: space-between; gap: 12px;
+  padding: 10px 0; border-bottom: 1px solid var(--border);
+}
+.member-role-row:last-child { border-bottom: 0; }
+.member-role-row select { max-width: 210px; }
+@media (max-width: 480px) {
+  .member-role-row { flex-direction: column; align-items: stretch; gap: 6px; }
+  .member-role-row select { max-width: 100%; }
 }
 

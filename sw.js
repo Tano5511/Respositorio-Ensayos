@@ -1,6 +1,6 @@
 /* Service worker sencillo para uso sin conexión */
-// v28: invalida copias en caché del botón de iglesias siempre visible.
-const CACHE_NAME = 'repertorio-v28';
+// v29: servicios / paneles por iglesia con caché de repertorios aislada.
+const CACHE_NAME = 'repertorio-v29';
 const ASSETS = [
   './',
   './index.html',
@@ -14,11 +14,13 @@ const ASSETS = [
   './js/store.js',
   './js/ui.js',
   './js/auth.js',
+  './js/services.js',
   './js/view-song.js',
   './js/view-songs.js',
   './js/view-setlists.js',
   './js/view-search.js',
   './js/view-settings.js',
+  './js/view-services.js',
   './js/view-church.js',
   './js/view-members.js',
   './js/app.js',

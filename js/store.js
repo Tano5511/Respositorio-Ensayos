@@ -12,7 +12,10 @@
   /* Columnas explícitas: chords/lyrics se mantienen porque el buscador y el
      lector trabajan sobre song.content (chordpro) y song.lyrics. */
   const SONG_COLUMNS = 'id, title, author, key, lyrics, chords, notes, bpm, duration, category, difficulty, tags, links, summary, favorite, created_at, updated_at';
-  const SETLIST_COLUMNS = 'id, name, date, service, notes, items, created_at, updated_at';
+  const SETLIST_COLUMNS = 'id, name, date, service, service_id, notes, items, created_at, updated_at';
+  /* Hasta que se ejecute la migración de servicios, la columna service_id
+     no existe en la base: se usa la consulta anterior. */
+  const LEGACY_SETLIST_COLUMNS = 'id, name, date, service, notes, items, created_at, updated_at';
 
   /* Límites del resumen por parte. Se aplican al leer y al escribir para que
      un respaldo manipulado o una canción antigua nunca rompa la vista. */
@@ -328,7 +331,12 @@
     return profileById(activeProfileId) || profiles[0] || null;
   }
 
+  /* Con servicios activos, el permiso de escritura lo define el rol del panel
+     activo (el RPC ya incluye el rol de la iglesia como fallback). Sin servicios,
+     se mantiene el comportamiento anterior basado en el rol de la iglesia. */
   function hasWriteRole() {
+    const Services = window.Services;
+    if (Services && Services.available && activeServiceId()) return Services.canEdit;
     const Auth = window.Auth;
     return !!(Auth && (Auth.isAdmin || Auth.isEditor));
   }
@@ -344,6 +352,10 @@
      de siempre: quien puede editar, puede borrar. */
   function canDelete() {
     if (!cloudEnabled()) return canEdit();
+    const Services = window.Services;
+    if (Services && Services.available && activeServiceId()) {
+      return Services.canDelete && navigator.onLine !== false;
+    }
     return !!(window.Auth && window.Auth.isAdmin && navigator.onLine !== false);
   }
 
@@ -380,7 +392,8 @@
     return false;
   }
 
-  /* Acciones delicadas: en la nube sólo las puede hacer un administrador. */
+  /* Acciones delicadas sobre la iglesia entera: requieren admin de iglesia.
+     Borrar un repertorio, en cambio, depende del admin del panel activo. */
   function ensureAdmin(label) {
     if (!cloudEnabled()) return ensureEditable();
     if (!window.Auth || !window.Auth.isAdmin) {
@@ -394,6 +407,14 @@
       return false;
     }
     return true;
+  }
+
+  function ensureSetlistDelete() {
+    if (canDelete()) return true;
+    if (window.UI && window.UI.toast) {
+      window.UI.toast('Solo un administrador puede borrar repertorios', 'error');
+    }
+    return false;
   }
 
   /* ---------------- Nube (Supabase) ----------------
@@ -414,6 +435,18 @@
   function activeChurchId() {
     const Auth = window.Auth;
     return Auth && Auth.church ? Auth.church.id : '';
+  }
+
+  /* Los repertorios se aíslan por iglesia y por servicio. '' significa que no
+     hay filtro (modo "Todos" del admin, o migración de servicios pendiente). */
+  function activeServiceId() {
+    const Services = window.Services;
+    return Services && typeof Services.filterId === 'function' ? Services.filterId() : '';
+  }
+
+  function writeServiceId() {
+    const Services = window.Services;
+    return Services && typeof Services.writeId === 'function' ? Services.writeId() : '';
   }
 
   function uuid() {
@@ -584,7 +617,7 @@
   }
 
   function toSetlistRow(list, churchId) {
-    return {
+    const row = {
       id: list.id,
       church_id: churchId,
       name: String(list.name || '').trim().slice(0, 160),
@@ -602,6 +635,11 @@
         done: !!item.done,
       })),
     };
+    /* Si el servicio no existe todavía (migración pendiente) no se envía la
+       columna: la base sigue funcionando como antes. */
+    const serviceId = list.serviceId || writeServiceId();
+    if (serviceId) row.service_id = serviceId;
+    return row;
   }
 
   function fromSetlistRow(row) {
@@ -610,6 +648,7 @@
       name: row.name || '',
       date: row.date || '',
       service: row.service || '',
+      serviceId: row.service_id || '',
       notes: row.notes || '',
       items: (Array.isArray(row.items) ? row.items : []).map(normalizeItem),
       createdAt: row.created_at || '',
@@ -718,27 +757,31 @@
     }
   }
 
-  function cacheKey(churchId) {
-    return CLOUD_CACHE_PREFIX + churchId;
+  function cacheKey(churchId, serviceId) {
+    const id = churchId || activeChurchId();
+    return CLOUD_CACHE_PREFIX + id + (serviceId ? '.' + serviceId : '');
   }
 
   function sessionKey() {
     const user = window.Auth && window.Auth.user ? window.Auth.user.id : 'anon';
-    return user + '|' + activeChurchId();
+    return user + '|' + activeChurchId() + '|' + activeServiceId();
   }
 
   function lastSyncKey() {
     const user = window.Auth && window.Auth.user ? window.Auth.user.id : 'anon';
-    return LAST_SYNC_PREFIX + user + '.' + activeChurchId();
+    const serviceId = activeServiceId();
+    return LAST_SYNC_PREFIX + user + '.' + activeChurchId() + (serviceId ? '.' + serviceId : '');
   }
 
   function readLastSync() {
     try { return window.localStorage.getItem(lastSyncKey()) || ''; } catch (error) { return ''; }
   }
 
-  function writeLastSync(value, churchId) {
+  function writeLastSync(value, churchId, serviceId) {
     const user = window.Auth && window.Auth.user ? window.Auth.user.id : 'anon';
-    const key = LAST_SYNC_PREFIX + user + '.' + (churchId || activeChurchId());
+    const id = churchId || activeChurchId();
+    const svc = serviceId === undefined ? activeServiceId() : serviceId;
+    const key = LAST_SYNC_PREFIX + user + '.' + id + (svc ? '.' + svc : '');
     try { window.localStorage.setItem(key, value); } catch (error) { /* sin almacenamiento */ }
   }
 
@@ -754,6 +797,7 @@
     while (rows.length < max) {
       const to = Math.min(from + SYNC_PAGE_SIZE, max) - 1;
       let query = authClient().from(table).select(columns).eq('church_id', churchId);
+      if (opts.serviceId) query = query.eq('service_id', opts.serviceId);
       if (opts.since) query = query.gte('updated_at', opts.since);
       if (opts.orderBy) query = query.order(opts.orderBy, { ascending: !!opts.ascending });
       const { data, error } = await query.range(from, to);
@@ -800,17 +844,19 @@
     else state.setlists = state.setlists.filter(keep);
   }
 
-  function writeCloudCache(churchId) {
+  function writeCloudCache(churchId, serviceId) {
     if (!cloudEnabled()) return;
     const id = churchId || activeChurchId();
     if (!id) return;
+    const svc = serviceId === undefined ? activeServiceId() : serviceId;
     try {
-      window.localStorage.setItem(cacheKey(id), JSON.stringify({
-        version: 1,
+      window.localStorage.setItem(cacheKey(id, svc), JSON.stringify({
+        version: 2,
         churchId: id,
+        serviceId: svc,
         savedAt: new Date().toISOString(),
         songs: state.songs,
-        setlists: state.setlists,
+        setlists: state.setlists.map((list) => Object.assign({}, list, { serviceId: list.serviceId || svc })),
       }));
       storageOk = true;
     } catch (error) {
@@ -818,9 +864,8 @@
     }
   }
 
-  function readCloudCache(churchId) {
+  function parseCloudCache(raw) {
     try {
-      const raw = window.localStorage.getItem(cacheKey(churchId));
       if (!raw) return null;
       const parsed = JSON.parse(raw);
       if (!parsed || !Array.isArray(parsed.songs) || !Array.isArray(parsed.setlists)) return null;
@@ -828,6 +873,32 @@
     } catch (error) {
       return null;
     }
+  }
+
+  function readCloudCache(churchId, serviceId) {
+    const svc = serviceId === undefined ? activeServiceId() : serviceId;
+    let raw = null;
+    try { raw = window.localStorage.getItem(cacheKey(churchId, svc)); } catch (error) { return null; }
+    const current = parseCloudCache(raw);
+    if (current) return current;
+    if (!svc) return null;
+
+    /* Cache antigua, por iglesia: los repertorios de antes de la migración
+       pertenecen todos a General. Los demás paneles arrancan vacíos. */
+    try { raw = window.localStorage.getItem(cacheKey(churchId, '')); } catch (error) { return null; }
+    const legacy = parseCloudCache(raw);
+    if (!legacy) return null;
+    const isGeneral = !!(window.Services && window.Services.available && window.Services.isGeneral(svc));
+    return {
+      version: 2,
+      churchId: churchId,
+      serviceId: svc,
+      savedAt: legacy.savedAt || '',
+      songs: legacy.songs,
+      setlists: isGeneral
+        ? legacy.setlists.map((list) => Object.assign({}, list, { serviceId: svc }))
+        : [],
+    };
   }
 
   function readLocalSettings() {
@@ -896,6 +967,9 @@
     const opts = options || {};
     const Auth = window.Auth;
     const churchId = activeChurchId();
+    const serviceId = activeServiceId();
+    const setlistColumns = (window.Services && window.Services.available)
+      ? SETLIST_COLUMNS : LEGACY_SETLIST_COLUMNS;
     const key = sessionKey();
     const epoch = cloudEpoch;
 
@@ -907,7 +981,7 @@
     if (savedSettings) state.settings = Object.assign({}, state.settings, savedSettings);
     if (Auth.church && Auth.church.name) state.settings.churchName = Auth.church.name;
 
-    const cached = readCloudCache(churchId);
+    const cached = readCloudCache(churchId, serviceId);
     const since = opts.force ? '' : readLastSync();
     const incremental = !!(since && cached && cached.churchId === churchId);
 
@@ -925,14 +999,14 @@
           fetchPaged('songs', SONG_COLUMNS, churchId, {
             since: since, orderBy: 'updated_at', ascending: false, max: MAX_SYNC_SONGS,
           }),
-          fetchPaged('setlists', SETLIST_COLUMNS, churchId, {
-            since: since, orderBy: 'updated_at', ascending: false, max: MAX_SYNC_SETLISTS,
+          fetchPaged('setlists', setlistColumns, churchId, {
+            since: since, orderBy: 'updated_at', ascending: false, max: MAX_SYNC_SETLISTS, serviceId: serviceId,
           }),
           fetchPaged('songs', 'id', churchId, {
             orderBy: 'id', ascending: true, max: MAX_SYNC_SONGS + 1,
           }),
           fetchPaged('setlists', 'id', churchId, {
-            orderBy: 'id', ascending: true, max: MAX_SYNC_SETLISTS + 1,
+            orderBy: 'id', ascending: true, max: MAX_SYNC_SETLISTS + 1, serviceId: serviceId,
           }),
         ]);
         if (epoch !== cloudEpoch) return state;
@@ -947,8 +1021,8 @@
           fetchPaged('songs', SONG_COLUMNS, churchId, {
             orderBy: 'updated_at', ascending: false, max: MAX_SYNC_SONGS,
           }),
-          fetchPaged('setlists', SETLIST_COLUMNS, churchId, {
-            orderBy: 'date', ascending: false, max: MAX_SYNC_SETLISTS,
+          fetchPaged('setlists', setlistColumns, churchId, {
+            orderBy: 'date', ascending: false, max: MAX_SYNC_SETLISTS, serviceId: serviceId,
           }),
         ]);
         songsResult = results[0];
@@ -960,10 +1034,10 @@
       mergeRows('setlist', setlistsResult.rows.map(fromSetlistRow), churchId);
       applyData({ songs: state.songs, setlists: state.setlists, settings: state.settings });
       if (Auth.church && Auth.church.name) state.settings.churchName = Auth.church.name;
-      writeCloudCache(churchId);
+      writeCloudCache(churchId, serviceId);
       writeLocalSettings();
       /* Pequeño margen hacia atrás por si el reloj del dispositivo va adelantado. */
-      writeLastSync(new Date(Date.now() - SYNC_SKEW_MS).toISOString(), churchId);
+      writeLastSync(new Date(Date.now() - SYNC_SKEW_MS).toISOString(), churchId, serviceId);
       loadedSessionKey = key;
       setOffline(false);
       notifySyncLimit({
@@ -1300,8 +1374,19 @@
     };
   }
 
-  /* Al cambiar de iglesia se borra sólo la copia local de la iglesia que se
-     estaba usando. Las demás iglesias mantienen su caché para uso sin conexión. */
+  function removeStoredKeys(match) {
+    [window.localStorage, window.sessionStorage].forEach((storage) => {
+      try {
+        Object.keys(storage).slice().forEach((storedKey) => {
+          if (match(storedKey)) storage.removeItem(storedKey);
+        });
+      } catch (error) { /* sin almacenamiento */ }
+    });
+  }
+
+  /* Al cambiar de iglesia se borra sólo la copia local de esa iglesia,
+     incluidas las cachés de todos sus servicios. Las demás iglesias mantienen
+     su caché para uso sin conexión. */
   function clearActiveChurchData() {
     if (!window.Auth || !window.Auth.isEnabled) return;
     const churchId = activeChurchId();
@@ -1312,13 +1397,29 @@
     loadedSessionKey = '';
     if (churchId) {
       const user = window.Auth && window.Auth.user ? window.Auth.user.id : 'anon';
-      const lastSyncKeyForChurch = LAST_SYNC_PREFIX + user + '.' + churchId;
-      [window.localStorage, window.sessionStorage].forEach((storage) => {
-        try {
-          storage.removeItem(cacheKey(churchId));
-          storage.removeItem(lastSyncKeyForChurch);
-        } catch (error) { /* sin almacenamiento */ }
-      });
+      const cachePrefix = CLOUD_CACHE_PREFIX + churchId;
+      const syncPrefix = LAST_SYNC_PREFIX + user + '.' + churchId;
+      removeStoredKeys((storedKey) => storedKey.indexOf(cachePrefix) === 0
+        || storedKey.indexOf(syncPrefix) === 0);
+    }
+    notify();
+    clearRuntimeCache();
+  }
+
+  /* Al cambiar de servicio se descartan los repertorios en memoria y la caché
+     del panel que se dejó. Las canciones son globales y se conservan. */
+  function clearActiveServiceData(serviceId) {
+    if (!cloudEnabled()) return;
+    const churchId = activeChurchId();
+    const svc = serviceId || '';
+    cloudEpoch += 1;
+    state.setlists = [];
+    loadedSessionKey = '';
+    if (churchId) {
+      const user = window.Auth && window.Auth.user ? window.Auth.user.id : 'anon';
+      const cache = cacheKey(churchId, svc);
+      const syncPrefix = LAST_SYNC_PREFIX + user + '.' + churchId + (svc ? '.' + svc : '');
+      removeStoredKeys((storedKey) => storedKey === cache || storedKey.indexOf(syncPrefix) === 0);
     }
     notify();
     clearRuntimeCache();
@@ -1441,6 +1542,7 @@
         name: 'Nuevo repertorio',
         date: window.U.todayISO(),
         service: 'Culto dominical',
+        serviceId: writeServiceId(),
         notes: '',
         items: [],
       }, payload);
@@ -1455,7 +1557,7 @@
   }
 
   function deleteSetlist(id) {
-    if (!ensureAdmin('borrar repertorios')) return false;
+    if (!ensureSetlistDelete()) return false;
     state.setlists = state.setlists.filter((list) => list.id !== id);
     commit();
     deleteSetlistRow(id);
@@ -1470,6 +1572,7 @@
       name: original.name + ' (copia)',
       date: original.date,
       service: original.service,
+      serviceId: original.serviceId || writeServiceId(),
       notes: original.notes,
       items: original.items.map((item) => Object.assign({}, item, { id: window.U.uid('item'), done: false })),
       createdAt: new Date().toISOString(),
@@ -1764,7 +1867,10 @@
   }
 
   function allServices() {
-    const set = new Set(['Culto dominical', 'Ensayo', 'Culto especial', 'Reunión de jóvenes', 'Vigilia', 'Boda']);
+    const Services = window.Services;
+    const set = new Set(Services && Services.available
+      ? Services.list.map((service) => service.name)
+      : ['Culto dominical', 'Ensayo', 'Culto especial', 'Reunión de jóvenes', 'Vigilia', 'Boda']);
     state.setlists.forEach((list) => {
       if (list.service) set.add(list.service);
     });
@@ -1902,7 +2008,7 @@
   window.Store = {
     CATEGORIES,
     state,
-    load, loadCloud, subscribe, clearSession, clearActiveChurchData,
+    load, loadCloud, subscribe, clearSession, clearActiveChurchData, clearActiveServiceData,
     pendingImport, importLocal, skipImport,
     getSong, saveSong, deleteSong, toggleFavorite,
     getSetlist, saveSetlist, deleteSetlist, duplicateSetlist,
