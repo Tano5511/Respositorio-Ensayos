@@ -471,42 +471,17 @@
       .sort((a, b) => a.church.name.localeCompare(b.church.name, 'es'));
   }
 
-  async function syncSession(session) {
-    if (!session || !session.user) {
-      state.session = null;
-      state.user = null;
-      state.memberships = [];
-      state.activeChurchId = null;
-      state.inviteCode = '';
-      lastToken = '';
-      clearStoredSessionData();
-      showGate('login');
-      emit('signed-out');
+  /* Resuelve la iglesia activa y avisa a la app. Se usa también cuando llega
+     un evento de sesión repetido: ocultar la pantalla sin emitir "ready"
+     deja la app en blanco. */
+  function applyMembershipState() {
+    if (state.addingChurch) {
+      showGate('church');
+      emit('needs-church');
       return;
     }
-
-    const token = String(session.access_token || '');
-    state.session = session;
-    state.user = session.user;
-
-    if (token && token === lastToken && state.memberships.length) {
-      hideGate();
-      return;
-    }
-
-    try {
-      await loadMemberships();
-    } catch (error) {
-      lastToken = '';
-      showGate('problem', errorText(error));
-      emit('error');
-      return;
-    }
-
-    lastToken = token;
 
     if (!state.memberships.length) {
-      state.addingChurch = false;
       state.mode = 'church';
       showGate('church');
       emit('needs-church');
@@ -526,6 +501,42 @@
     storeChurchId(state.activeChurchId);
     hideGate();
     emit('ready');
+  }
+
+  async function syncSession(session) {
+    if (!session || !session.user) {
+      state.session = null;
+      state.user = null;
+      state.memberships = [];
+      state.activeChurchId = null;
+      state.inviteCode = '';
+      lastToken = '';
+      clearStoredSessionData();
+      showGate('login');
+      emit('signed-out');
+      return;
+    }
+
+    const token = String(session.access_token || '');
+    state.session = session;
+    state.user = session.user;
+
+    if (token && token === lastToken && state.memberships.length) {
+      applyMembershipState();
+      return;
+    }
+
+    try {
+      await loadMemberships();
+    } catch (error) {
+      lastToken = '';
+      showGate('problem', errorText(error));
+      emit('error');
+      return;
+    }
+
+    lastToken = token;
+    applyMembershipState();
   }
 
   function applySession(session) {
