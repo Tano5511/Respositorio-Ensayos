@@ -313,7 +313,7 @@
       + '<form class="auth-form" data-gate-form="join-church" novalidate>'
       + '<div class="auth-error" role="alert" hidden></div>'
       + '<div class="field"><label for="inviteInput">Unirme con un código</label>'
-      + '<input id="inviteInput" name="code" type="text" class="auth-code" placeholder="ABC12345" maxlength="12" autocapitalize="characters" autocomplete="off" spellcheck="false" required></div>'
+      + '<input id="inviteInput" name="code" type="text" class="auth-code" placeholder="ABC1234" maxlength="32" autocapitalize="characters" autocomplete="off" spellcheck="false" required></div>'
       + '<button type="submit" class="btn block">Unirme como músico</button>'
       + '</form>';
   }
@@ -595,8 +595,10 @@
     clearFormError(form);
     const code = String(form.code.value || '').trim().toUpperCase();
 
-    if (!/^[A-Z0-9]{8,32}$/.test(code)) {
-      return formError(form, 'El código tiene entre 8 y 32 letras y números, sin espacios.');
+    /* Los códigos nuevos tienen 7 caracteres; se aceptan hasta 32 para que
+       las invitaciones generadas antes sigan funcionando. */
+    if (!/^[A-Z0-9]{7,32}$/.test(code)) {
+      return formError(form, 'El código tiene entre 7 y 32 letras y números, sin espacios.');
     }
 
     busy(form, true, 'Uniéndome…');

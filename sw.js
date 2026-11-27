@@ -1,5 +1,6 @@
 /* Service worker sencillo para uso sin conexión */
-const CACHE_NAME = 'repertorio-v23';
+// v25: invalida copias en caché de auth.js con la validación vieja de 8..32.
+const CACHE_NAME = 'repertorio-v25';
 const ASSETS = [
   './',
   './index.html',

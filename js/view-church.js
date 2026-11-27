@@ -98,7 +98,7 @@
       + (isAdmin
         ? '  <section class="card settings-card">'
           + '    <h2>Código de invitación</h2>'
-          + '    <p class="desc">Solo los administradores pueden ver y compartir este código. Quien lo usa entra como <strong>Músico</strong> y puede ver el repertorio; después un administrador puede darle otro rol.</p>'
+          + '    <p class="desc">Solo los administradores pueden ver y compartir este código. Los códigos nuevos tienen 7 caracteres; los códigos anteriores siguen siendo válidos. Quien lo usa entra como <strong>Músico</strong> y puede ver el repertorio; después un administrador puede darle otro rol.</p>'
           + '    <div class="invite-box"><code class="invite-code" id="inviteCodeValue">Cargando...</code></div>'
           + '    <div class="row wrap" style="gap:8px;margin-top:12px">'
           + '      <button type="button" class="btn" id="copyCode" disabled>Copiar código</button>'
