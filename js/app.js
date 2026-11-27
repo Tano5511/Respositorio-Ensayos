@@ -28,6 +28,53 @@
     return name + (readOnly ? ' · solo lectura' : '') + roleChip;
   }
 
+  function openChurchSelector() {
+    const Auth = window.Auth;
+    const memberships = Auth && Auth.isEnabled ? Auth.memberships : [];
+    if (memberships.length < 2) return;
+    UI.modal({
+      title: 'Cambiar de iglesia',
+      subtitle: 'Elegí con cuál querés trabajar ahora.',
+      body: '<div class="auth-choices">' + memberships.map((item) =>
+        '<button type="button" class="auth-choice" data-switch-church="' + U.esc(item.church.id) + '">'
+        + '<span>' + U.esc(item.church.name) + '</span>'
+        + '<span class="chip">' + U.esc(U.roleLabel(item.role)) + '</span>'
+        + '</button>').join('') + '</div>',
+      actions: [{ label: 'Cancelar', class: 'ghost' }],
+      onMount: (box) => {
+        box.querySelectorAll('[data-switch-church]').forEach((button) => {
+          button.addEventListener('click', () => {
+            const target = button.dataset.switchChurch;
+            UI.closeModal();
+            Auth.selectChurch(target);
+            UI.toast('Iglesia cambiada');
+          });
+        });
+      },
+    });
+  }
+
+  function updateChurchSwitcher(settings) {
+    const button = document.getElementById('churchSwitcher');
+    if (!button) return;
+    const Auth = window.Auth;
+    const memberships = Auth && Auth.isEnabled ? Auth.memberships : [];
+    button.hidden = memberships.length < 2;
+    if (button.hidden) {
+      button.textContent = '';
+      button.setAttribute('aria-label', '');
+      return;
+    }
+    const current = Auth.church ? Auth.church.name : (settings.churchName || 'Mi iglesia');
+    const role = Auth.role ? ' · ' + U.roleLabel(Auth.role) : '';
+    button.textContent = current + role + ' ▾';
+    button.setAttribute('aria-label', 'Cambiar de iglesia. Iglesia actual: ' + current + role);
+    if (!button.dataset.churchSwitcherBound) {
+      button.dataset.churchSwitcherBound = '1';
+      button.addEventListener('click', openChurchSelector);
+    }
+  }
+
   function renderRoute() {
     const oldView = document.getElementById('view');
     if (oldView && typeof oldView.__cleanup === 'function') {
@@ -81,6 +128,7 @@
     const readOnly = !Store.canEdit;
     const label = document.getElementById('churchLabel');
     if (label) label.textContent = churchLabelText(settings);
+    updateChurchSwitcher(settings);
     const newSong = document.querySelector('[data-action="new-song"]');
     if (newSong) newSong.style.display = readOnly ? 'none' : '';
     const storageNote = document.getElementById('storageNote');

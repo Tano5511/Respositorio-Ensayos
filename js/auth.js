@@ -18,6 +18,9 @@
     mode: 'loading',
     message: '',
     pendingEmail: '',
+    // La pantalla de crear/unirse también se usa para sumar iglesias
+    // cuando el usuario ya tiene una. En ese caso se ofrece "Volver".
+    addingChurch: false,
     // Código de invitación. Se carga por RPC solo para administradores.
     inviteCode: '',
   };
@@ -299,23 +302,29 @@
 
   function churchHTML() {
     const email = state.user && state.user.email ? state.user.email : '';
-    return authHead('users', 'Casi listo', 'Tu iglesia', 'Tu cuenta está lista. Creá tu iglesia o unite a una con el código de invitación.')
+    const head = state.addingChurch
+      ? authHead('users', 'Más iglesias', 'Sumá otra iglesia', 'Tu iglesia actual se mantiene. Creá otra o unite con un código de invitación.')
+      : authHead('users', 'Casi listo', 'Tu iglesia', 'Tu cuenta está lista. Creá tu iglesia o unite a una con el código de invitación.');
+    return head
       + (state.message ? '<div class="auth-error" role="alert">' + U.esc(state.message) + '</div>' : '')
       + '<div class="auth-user"><span>' + U.esc(email) + '</span>'
       + '<button type="button" class="auth-link" data-gate-signout>Salir</button></div>'
       + '<form class="auth-form" data-gate-form="create-church" novalidate>'
       + '<div class="auth-error" role="alert" hidden></div>'
-      + '<div class="field"><label for="churchNameInput">Crear una iglesia</label>'
+      + '<div class="field"><label for="churchNameInput">' + (state.addingChurch ? 'Crear otra iglesia' : 'Crear una iglesia') + '</label>'
       + '<input id="churchNameInput" name="name" type="text" placeholder="Ej.: Iglesia Central" maxlength="120" autocomplete="organization" required></div>'
       + '<button type="submit" class="btn primary block">Crear iglesia</button>'
       + '</form>'
       + '<div class="auth-or">o</div>'
       + '<form class="auth-form" data-gate-form="join-church" novalidate>'
       + '<div class="auth-error" role="alert" hidden></div>'
-      + '<div class="field"><label for="inviteInput">Unirme con un código</label>'
+      + '<div class="field"><label for="inviteInput">' + (state.addingChurch ? 'Unirme a otra iglesia' : 'Unirme con un código') + '</label>'
       + '<input id="inviteInput" name="code" type="text" class="auth-code" placeholder="ABC1234" maxlength="32" autocapitalize="characters" autocomplete="off" spellcheck="false" required></div>'
       + '<button type="submit" class="btn block">Unirme como músico</button>'
-      + '</form>';
+      + '</form>'
+      + (state.addingChurch
+        ? '<button type="button" class="btn ghost block" style="margin-top:14px" data-gate-back>Volver a la app</button>'
+        : '');
   }
 
   function chooseHTML() {
@@ -362,6 +371,7 @@
     document.body.classList.remove('auth-locked');
     if (!gateBound) gateElement();
     state.mode = 'ready';
+    state.addingChurch = false;
   }
 
   function onGateClick(event) {
@@ -380,6 +390,12 @@
 
     if (event.target.closest('[data-gate-signout]')) {
       signOut();
+      return;
+    }
+
+    if (event.target.closest('[data-gate-back]')) {
+      hideGate();
+      emit('ready');
       return;
     }
 
@@ -490,6 +506,7 @@
     lastToken = token;
 
     if (!state.memberships.length) {
+      state.addingChurch = false;
       state.mode = 'church';
       showGate('church');
       emit('needs-church');
@@ -594,6 +611,7 @@
   async function doJoinChurch(form) {
     clearFormError(form);
     const code = String(form.code.value || '').trim().toUpperCase();
+    const before = new Set(state.memberships.map((item) => item.church.id));
 
     /* Los códigos nuevos tienen 7 caracteres; se aceptan hasta 32 para que
        las invitaciones generadas antes sigan funcionando. */
@@ -607,8 +625,9 @@
       if (error) throw error;
       const church = Array.isArray(data) ? data[0] : data;
       if (!church || !church.id) throw new Error('Ese código de invitación no es correcto. Pedíselo a un administrador.');
+      const alreadyMember = before.has(church.id);
       await afterChurchChange(church.id);
-      UI.toast('Te uniste a ' + church.name);
+      UI.toast(alreadyMember ? 'Ya sos miembro de ' + church.name : 'Te uniste a ' + church.name);
     } catch (error) {
       formError(form, errorText(error));
     } finally {
@@ -616,10 +635,25 @@
     }
   }
 
+  /* Al cambiar de iglesia se descarta la biblioteca cargada y la caché de la
+     iglesia anterior antes de activar la nueva. Así nunca se muestran juntas. */
+  function clearActiveChurchData() {
+    try {
+      if (window.Store && typeof window.Store.clearActiveChurchData === 'function') {
+        window.Store.clearActiveChurchData();
+      }
+    } catch (error) {
+      console.error(error);
+    }
+  }
+
   async function afterChurchChange(churchId) {
     await loadMemberships();
     if (!state.memberships.some((item) => item.church.id === churchId)) {
       throw new Error('No pudimos cargar tu iglesia. Recargá la página.');
+    }
+    if (state.activeChurchId && state.activeChurchId !== churchId) {
+      clearActiveChurchData();
     }
     state.inviteCode = '';
     state.activeChurchId = churchId;
@@ -632,6 +666,9 @@
   function selectChurch(id) {
     const match = state.memberships.find((item) => item.church.id === id);
     if (!match) return;
+    if (state.activeChurchId && state.activeChurchId !== id) {
+      clearActiveChurchData();
+    }
     state.inviteCode = '';
     state.activeChurchId = id;
     storeChurchId(id);
@@ -662,7 +699,11 @@
     if (!state.user) return [];
     await loadMemberships();
     if (state.activeChurchId && !state.memberships.some((item) => item.church.id === state.activeChurchId)) {
+      const previous = state.activeChurchId;
       state.activeChurchId = state.memberships.length ? state.memberships[0].church.id : null;
+      if (previous && state.activeChurchId && previous !== state.activeChurchId) {
+        clearActiveChurchData();
+      }
       if (state.activeChurchId) storeChurchId(state.activeChurchId);
     }
     return state.memberships.slice();
@@ -771,6 +812,12 @@
     createChurch(name) {
       if (!state.client) return Promise.reject(new Error('Supabase no está configurado.'));
       return state.client.rpc('create_church', { p_name: name });
+    },
+    /* Abre la pantalla de crear/unirse sin salir de la iglesia actual. */
+    addChurch() {
+      if (!state.client || !state.user) return;
+      state.addingChurch = true;
+      showGate('church');
     },
     joinChurch(code) {
       if (!state.client) return Promise.reject(new Error('Supabase no está configurado.'));

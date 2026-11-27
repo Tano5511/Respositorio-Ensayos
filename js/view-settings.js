@@ -80,12 +80,23 @@
           + (auth.isAdmin
             ? '      <button type="button" class="btn" id="members">' + UI.icon('users') + 'Miembros</button>'
             : '')
-          + (auth.memberships.length > 1
-            ? '      <button type="button" class="btn" id="switchChurch">' + UI.icon('users') + 'Cambiar de iglesia</button>'
-            : '')
           + '      <button type="button" class="btn danger" id="signOut">' + UI.icon('x') + 'Cerrar sesión</button>'
           + '    </div>'
           + '    <p class="tiny muted" style="margin-top:10px">Tus canciones y repertorios se guardan en la nube de tu iglesia y se comparten con sus miembros.</p>'
+          + '  </section>'
+        : '')
+      + (church
+        ? '  <section class="card settings-card">'
+          + '    <h2>Iglesia</h2>'
+          + '    <p class="desc">Estás en <strong>' + U.esc(church.name) + '</strong> como <strong>' + U.esc(U.roleLabel(auth.role)) + '</strong>. Podés sumar otra iglesia sin dejar esta.</p>'
+          + '    <div class="row wrap" style="gap:8px;margin-top:12px">'
+          + '      <button type="button" class="btn primary" id="addJoinChurch">' + UI.icon('users') + 'Unirme a otra iglesia</button>'
+          + '      <button type="button" class="btn" id="addCreateChurch">' + UI.icon('link') + 'Crear otra iglesia</button>'
+          + (auth.memberships.length > 1
+            ? '      <button type="button" class="btn" id="switchChurch">' + UI.icon('users') + 'Cambiar de iglesia</button>'
+            : '')
+          + '    </div>'
+          + '    <p class="tiny muted" style="margin-top:10px">Al unirte con el código de una iglesia en la que ya estés, verás «Ya sos miembro» y no se creará una membresía duplicada.</p>'
           + '  </section>'
         : '')
       + (auth
@@ -192,6 +203,16 @@
       churchProfileButton.addEventListener('click', () => {
         window.location.hash = '#/iglesia';
       });
+    }
+
+    const addJoinButton = U.$('#addJoinChurch', container);
+    if (addJoinButton) {
+      addJoinButton.addEventListener('click', () => window.Auth.addChurch());
+    }
+
+    const addCreateButton = U.$('#addCreateChurch', container);
+    if (addCreateButton) {
+      addCreateButton.addEventListener('click', () => window.Auth.addChurch());
     }
 
     const switchChurchButton = U.$('#switchChurch', container);

@@ -316,6 +316,9 @@
   let offline = false;
   const writeQueues = new Map();
   let loadedSessionKey = '';
+  // Se incrementa al salir o al cambiar de iglesia. Una carga que venía de la
+  // iglesia anterior se descarta aunque termine después del cambio.
+  let cloudEpoch = 0;
 
   function profileById(id) {
     return profiles.find((profile) => profile.id === id) || null;
@@ -733,8 +736,10 @@
     try { return window.localStorage.getItem(lastSyncKey()) || ''; } catch (error) { return ''; }
   }
 
-  function writeLastSync(value) {
-    try { window.localStorage.setItem(lastSyncKey(), value); } catch (error) { /* sin almacenamiento */ }
+  function writeLastSync(value, churchId) {
+    const user = window.Auth && window.Auth.user ? window.Auth.user.id : 'anon';
+    const key = LAST_SYNC_PREFIX + user + '.' + (churchId || activeChurchId());
+    try { window.localStorage.setItem(key, value); } catch (error) { /* sin almacenamiento */ }
   }
 
   /* Trae filas en páginas pequeñas sin mostrar paginación al usuario.
@@ -795,13 +800,14 @@
     else state.setlists = state.setlists.filter(keep);
   }
 
-  function writeCloudCache() {
+  function writeCloudCache(churchId) {
     if (!cloudEnabled()) return;
-    const churchId = activeChurchId();
+    const id = churchId || activeChurchId();
+    if (!id) return;
     try {
-      window.localStorage.setItem(cacheKey(churchId), JSON.stringify({
+      window.localStorage.setItem(cacheKey(id), JSON.stringify({
         version: 1,
-        churchId: churchId,
+        churchId: id,
         savedAt: new Date().toISOString(),
         songs: state.songs,
         setlists: state.setlists,
@@ -891,6 +897,7 @@
     const Auth = window.Auth;
     const churchId = activeChurchId();
     const key = sessionKey();
+    const epoch = cloudEpoch;
 
     /* Una vez por usuario + iglesia: navegar no vuelve a pedir la biblioteca.
        Al reconectar o tras un error de escritura se fuerza una recarga. */
@@ -928,6 +935,7 @@
             orderBy: 'id', ascending: true, max: MAX_SYNC_SETLISTS + 1,
           }),
         ]);
+        if (epoch !== cloudEpoch) return state;
         songsResult = results[0];
         setlistsResult = results[1];
         /* Los ids permiten detectar borrados hechos por otro administrador.
@@ -947,14 +955,15 @@
         setlistsResult = results[1];
       }
 
+      if (epoch !== cloudEpoch) return state;
       mergeRows('song', songsResult.rows.map(fromSongRow), churchId);
       mergeRows('setlist', setlistsResult.rows.map(fromSetlistRow), churchId);
       applyData({ songs: state.songs, setlists: state.setlists, settings: state.settings });
       if (Auth.church && Auth.church.name) state.settings.churchName = Auth.church.name;
-      writeCloudCache();
+      writeCloudCache(churchId);
       writeLocalSettings();
       /* Pequeño margen hacia atrás por si el reloj del dispositivo va adelantado. */
-      writeLastSync(new Date(Date.now() - SYNC_SKEW_MS).toISOString());
+      writeLastSync(new Date(Date.now() - SYNC_SKEW_MS).toISOString(), churchId);
       loadedSessionKey = key;
       setOffline(false);
       notifySyncLimit({
@@ -962,6 +971,7 @@
         setlists: setlistsResult.truncated,
       });
     } catch (error) {
+      if (epoch !== cloudEpoch) return state;
       console.error('[store] No se pudieron cargar los datos de la iglesia', error);
       if (!cached) {
         applyData({ songs: [], setlists: [], settings: state.settings });
@@ -1290,8 +1300,33 @@
     };
   }
 
+  /* Al cambiar de iglesia se borra sólo la copia local de la iglesia que se
+     estaba usando. Las demás iglesias mantienen su caché para uso sin conexión. */
+  function clearActiveChurchData() {
+    if (!window.Auth || !window.Auth.isEnabled) return;
+    const churchId = activeChurchId();
+    cloudEpoch += 1;
+    state.songs = [];
+    state.setlists = [];
+    state.settings = Object.assign({}, state.settings, { churchName: DEFAULT_SETTINGS.churchName });
+    loadedSessionKey = '';
+    if (churchId) {
+      const user = window.Auth && window.Auth.user ? window.Auth.user.id : 'anon';
+      const lastSyncKeyForChurch = LAST_SYNC_PREFIX + user + '.' + churchId;
+      [window.localStorage, window.sessionStorage].forEach((storage) => {
+        try {
+          storage.removeItem(cacheKey(churchId));
+          storage.removeItem(lastSyncKeyForChurch);
+        } catch (error) { /* sin almacenamiento */ }
+      });
+    }
+    notify();
+    clearRuntimeCache();
+  }
+
   function clearSession() {
     if (!window.Auth || !window.Auth.isEnabled) return;
+    cloudEpoch += 1;
     state.songs = [];
     state.setlists = [];
     state.settings = Object.assign({}, state.settings, { churchName: DEFAULT_SETTINGS.churchName });
@@ -1867,7 +1902,7 @@
   window.Store = {
     CATEGORIES,
     state,
-    load, loadCloud, subscribe, clearSession,
+    load, loadCloud, subscribe, clearSession, clearActiveChurchData,
     pendingImport, importLocal, skipImport,
     getSong, saveSong, deleteSong, toggleFavorite,
     getSetlist, saveSetlist, deleteSetlist, duplicateSetlist,

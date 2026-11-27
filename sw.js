@@ -1,6 +1,6 @@
 /* Service worker sencillo para uso sin conexión */
-// v25: invalida copias en caché de auth.js con la validación vieja de 8..32.
-const CACHE_NAME = 'repertorio-v25';
+// v26: invalida copias en caché del selector de iglesias y la limpieza al cambiar.
+const CACHE_NAME = 'repertorio-v26';
 const ASSETS = [
   './',
   './index.html',

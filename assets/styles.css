@@ -132,6 +132,25 @@ img, svg { display: block; }
 .brand-text { display: flex; flex-direction: column; line-height: 1.15; }
 .brand-text strong { font-size: 1.02rem; letter-spacing: -.01em; }
 .brand-text small { color: var(--muted); font-size: .74rem; }
+.church-switcher {
+  align-self: flex-start;
+  max-width: 100%;
+  margin: 6px 6px 0;
+  padding: 4px 9px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: var(--surface-2);
+  color: var(--muted);
+  font: inherit;
+  font-size: .68rem;
+  line-height: 1.2;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  cursor: pointer;
+}
+.church-switcher:hover { color: var(--accent); border-color: var(--accent); }
+.church-switcher[hidden] { display: none; }
 
 .nav { display: flex; flex-direction: column; gap: 3px; }
 .nav a {
