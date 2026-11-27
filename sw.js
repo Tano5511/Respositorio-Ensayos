@@ -1,6 +1,6 @@
 /* Service worker sencillo para uso sin conexión */
-// v26: invalida copias en caché del selector de iglesias y la limpieza al cambiar.
-const CACHE_NAME = 'repertorio-v26';
+// v28: invalida copias en caché del botón de iglesias siempre visible.
+const CACHE_NAME = 'repertorio-v28';
 const ASSETS = [
   './',
   './index.html',

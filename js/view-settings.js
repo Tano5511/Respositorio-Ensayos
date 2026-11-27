@@ -92,9 +92,7 @@
           + '    <div class="row wrap" style="gap:8px;margin-top:12px">'
           + '      <button type="button" class="btn primary" id="addJoinChurch">' + UI.icon('users') + 'Unirme a otra iglesia</button>'
           + '      <button type="button" class="btn" id="addCreateChurch">' + UI.icon('link') + 'Crear otra iglesia</button>'
-          + (auth.memberships.length > 1
-            ? '      <button type="button" class="btn" id="switchChurch">' + UI.icon('users') + 'Cambiar de iglesia</button>'
-            : '')
+          + '      <button type="button" class="btn" id="switchChurch">' + UI.icon('users') + 'Cambiar de iglesia</button>'
           + '    </div>'
           + '    <p class="tiny muted" style="margin-top:10px">Al unirte con el código de una iglesia en la que ya estés, verás «Ya sos miembro» y no se creará una membresía duplicada.</p>'
           + '  </section>'
@@ -218,27 +216,12 @@
     const switchChurchButton = U.$('#switchChurch', container);
     if (switchChurchButton) {
       switchChurchButton.addEventListener('click', () => {
-        const memberships = window.Auth.memberships;
-        UI.modal({
-          title: 'Cambiar de iglesia',
-          subtitle: 'Elegí con cuál querés trabajar ahora.',
-          body: '<div class="auth-choices">' + memberships.map((item) =>
-            '<button type="button" class="auth-choice" data-switch-church="' + U.esc(item.church.id) + '">'
-            + '<span>' + U.esc(item.church.name) + '</span>'
-            + '<span class="chip">' + U.esc(U.roleLabel(item.role)) + '</span>'
-            + '</button>').join('') + '</div>',
-          actions: [{ label: 'Cancelar', class: 'ghost' }],
-          onMount: (box) => {
-            box.querySelectorAll('[data-switch-church]').forEach((button) => {
-              button.addEventListener('click', () => {
-                const target = button.dataset.switchChurch;
-                UI.closeModal();
-                window.Auth.selectChurch(target);
-                UI.toast('Iglesia cambiada');
-              });
-            });
-          },
-        });
+        const headerButton = document.getElementById('churchSwitcher') || document.getElementById('churchSwitcherMobile');
+        if (headerButton) {
+          headerButton.click();
+        } else {
+          window.Auth.addChurch();
+        }
       });
     }
 

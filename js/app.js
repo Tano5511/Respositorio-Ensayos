@@ -30,24 +30,48 @@
 
   function openChurchSelector() {
     const Auth = window.Auth;
-    const memberships = Auth && Auth.isEnabled ? Auth.memberships : [];
-    if (memberships.length < 2) return;
+    if (!Auth || !Auth.isEnabled) return;
+    const memberships = Auth.memberships;
+    const activeId = Auth.church ? Auth.church.id : '';
+    const listHTML = memberships.length
+      ? '<div class="label" style="margin-bottom:6px">Tus iglesias</div>'
+        + '<div class="auth-choices">' + memberships.map((item) =>
+          '<button type="button" class="auth-choice" data-switch-church="' + U.esc(item.church.id) + '">'
+          + '<span>' + U.esc(item.church.name) + '</span>'
+          + '<span class="row wrap" style="gap:6px">'
+          + (item.church.id === activeId ? '<span class="chip accent">Activa</span>' : '')
+          + '<span class="chip">' + U.esc(U.roleLabel(item.role)) + '</span>'
+          + '</span></button>').join('') + '</div>'
+      : '<p class="small muted">Todavía no pertenecés a ninguna iglesia.</p>';
+    const addHTML = '<div class="label" style="margin:16px 0 6px">Agregar una iglesia</div>'
+      + '<div class="row wrap" style="gap:8px">'
+      + '<button type="button" class="btn primary" data-add-church="create">Crear iglesia</button>'
+      + '<button type="button" class="btn" data-add-church="join">Unirme a otra iglesia</button>'
+      + '</div>';
     UI.modal({
-      title: 'Cambiar de iglesia',
-      subtitle: 'Elegí con cuál querés trabajar ahora.',
-      body: '<div class="auth-choices">' + memberships.map((item) =>
-        '<button type="button" class="auth-choice" data-switch-church="' + U.esc(item.church.id) + '">'
-        + '<span>' + U.esc(item.church.name) + '</span>'
-        + '<span class="chip">' + U.esc(U.roleLabel(item.role)) + '</span>'
-        + '</button>').join('') + '</div>',
+      title: 'Iglesias',
+      subtitle: memberships.length
+        ? 'Elegí con cuál querés trabajar o sumá otra.'
+        : 'Creá tu iglesia o unite con un código de invitación.',
+      body: listHTML + addHTML,
       actions: [{ label: 'Cancelar', class: 'ghost' }],
       onMount: (box) => {
         box.querySelectorAll('[data-switch-church]').forEach((button) => {
           button.addEventListener('click', () => {
             const target = button.dataset.switchChurch;
+            if (target === activeId) {
+              UI.closeModal();
+              return;
+            }
             UI.closeModal();
             Auth.selectChurch(target);
             UI.toast('Iglesia cambiada');
+          });
+        });
+        box.querySelectorAll('[data-add-church]').forEach((button) => {
+          button.addEventListener('click', () => {
+            UI.closeModal();
+            Auth.addChurch();
           });
         });
       },
@@ -55,24 +79,28 @@
   }
 
   function updateChurchSwitcher(settings) {
-    const button = document.getElementById('churchSwitcher');
-    if (!button) return;
+    const buttons = ['churchSwitcher', 'churchSwitcherMobile']
+      .map((id) => document.getElementById(id))
+      .filter(Boolean);
+    if (!buttons.length) return;
     const Auth = window.Auth;
-    const memberships = Auth && Auth.isEnabled ? Auth.memberships : [];
-    button.hidden = memberships.length < 2;
-    if (button.hidden) {
-      button.textContent = '';
-      button.setAttribute('aria-label', '');
-      return;
-    }
-    const current = Auth.church ? Auth.church.name : (settings.churchName || 'Mi iglesia');
-    const role = Auth.role ? ' · ' + U.roleLabel(Auth.role) : '';
-    button.textContent = current + role + ' ▾';
-    button.setAttribute('aria-label', 'Cambiar de iglesia. Iglesia actual: ' + current + role);
-    if (!button.dataset.churchSwitcherBound) {
-      button.dataset.churchSwitcherBound = '1';
-      button.addEventListener('click', openChurchSelector);
-    }
+    const hidden = !Auth || !Auth.isEnabled;
+    const current = Auth && Auth.church ? Auth.church.name : (settings.churchName || 'Elegí tu iglesia');
+    const role = Auth && Auth.role ? ' · ' + U.roleLabel(Auth.role) : '';
+    buttons.forEach((button) => {
+      button.hidden = hidden;
+      if (hidden) {
+        button.textContent = '';
+        button.setAttribute('aria-label', '');
+        return;
+      }
+      button.textContent = current + role + ' ▾';
+      button.setAttribute('aria-label', 'Iglesias. Actual: ' + current + role);
+      if (!button.dataset.churchSwitcherBound) {
+        button.dataset.churchSwitcherBound = '1';
+        button.addEventListener('click', openChurchSelector);
+      }
+    });
   }
 
   function renderRoute() {

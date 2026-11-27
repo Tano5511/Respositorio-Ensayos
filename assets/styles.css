@@ -151,6 +151,15 @@ img, svg { display: block; }
 }
 .church-switcher:hover { color: var(--accent); border-color: var(--accent); }
 .church-switcher[hidden] { display: none; }
+.church-switcher-mobile { display: none; }
+@media (max-width: 900px) {
+  .church-switcher-mobile {
+    display: inline-flex;
+    margin: 14px 16px 0;
+    max-width: calc(100% - 32px);
+  }
+  .church-switcher-mobile[hidden] { display: none; }
+}
 
 .nav { display: flex; flex-direction: column; gap: 3px; }
 .nav a {
