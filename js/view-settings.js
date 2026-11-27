@@ -93,6 +93,7 @@
           + '      <button type="button" class="btn primary" id="addJoinChurch">' + UI.icon('users') + 'Unirme a otra iglesia</button>'
           + '      <button type="button" class="btn" id="addCreateChurch">' + UI.icon('link') + 'Crear otra iglesia</button>'
           + '      <button type="button" class="btn" id="switchChurch">' + UI.icon('users') + 'Cambiar de iglesia</button>'
+          + '      <button type="button" class="btn ghost" id="leaveChurch">' + UI.icon('x') + 'Salir de esta iglesia</button>'
           + '    </div>'
           + '    <p class="tiny muted" style="margin-top:10px">Al unirte con el código de una iglesia en la que ya estés, verás «Ya sos miembro» y no se creará una membresía duplicada.</p>'
           + '  </section>'
@@ -224,6 +225,33 @@
           headerButton.click();
         } else {
           window.Auth.addChurch();
+        }
+      });
+    }
+
+    const leaveChurchButton = U.$('#leaveChurch', container);
+    if (leaveChurchButton) {
+      leaveChurchButton.addEventListener('click', async () => {
+        const auth = window.Auth;
+        const church = auth && auth.church;
+        if (!church) return;
+        const confirmed = await UI.confirm({
+          title: 'Salir de ' + church.name,
+          message: 'Vas a perder el acceso a sus canciones y repertorios. Los datos de la iglesia no se borran. '
+            + 'Si sos el último administrador, antes tenés que asignar otro administrador.',
+          confirmLabel: 'Salir de la iglesia',
+          danger: true,
+        });
+        if (!confirmed) return;
+        leaveChurchButton.disabled = true;
+        UI.toast('Saliendo de la iglesia…');
+        try {
+          await auth.leaveChurch(church.id);
+          UI.toast('Ya no pertenecés a esa iglesia');
+          document.dispatchEvent(new CustomEvent('repertorio:refresh'));
+        } catch (error) {
+          leaveChurchButton.disabled = false;
+          UI.toast(auth.errorText(error), 'error');
         }
       });
     }

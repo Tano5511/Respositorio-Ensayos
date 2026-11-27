@@ -1,6 +1,6 @@
 /* Service worker sencillo para uso sin conexión */
-// v30: servicios / paneles por iglesia y arranque correcto con varias iglesias.
-const CACHE_NAME = 'repertorio-v30';
+// v31: salir de una iglesia y alta/baja de miembros por panel.
+const CACHE_NAME = 'repertorio-v31';
 const ASSETS = [
   './',
   './index.html',

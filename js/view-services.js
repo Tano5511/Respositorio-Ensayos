@@ -124,16 +124,15 @@
     });
   }
 
-  function roleOptions(currentRole, disabled, inheritedLabel) {
-    const options = [
-      { value: '', label: inheritedLabel },
-      { value: 'admin', label: 'Administrador' },
-      { value: 'editor', label: 'Editor' },
-      { value: 'musico', label: 'Músico' },
-    ];
-    return '<select data-member-role' + (disabled ? ' disabled' : '') + '>'
+  function roleOptions(currentRole, isChurchAdmin, disabled) {
+    const roles = isChurchAdmin ? ['admin', 'editor', 'musico'] : ['editor', 'musico'];
+    const options = roles.map((role) => ({
+      value: role,
+      label: U.roleLabel(role),
+    }));
+    return '<select data-member-role' + (disabled ? ' disabled title="No podés cambiar tu propio rol"' : '') + '>'
       + options.map((option) => '<option value="' + option.value + '"'
-        + (option.value === (currentRole || '') ? ' selected' : '') + '>' + U.esc(option.label) + '</option>').join('')
+        + (option.value === (currentRole || 'musico') ? ' selected' : '') + '>' + U.esc(option.label) + '</option>').join('')
       + '</select>';
   }
 
@@ -145,62 +144,115 @@
 
     const handle = UI.modal({
       title: 'Miembros de ' + service.name,
-      subtitle: 'El rol del servicio reemplaza al de la iglesia dentro de este panel.',
+      subtitle: 'Sumá o quitá personas de este panel. Los que no están, usan el rol de la iglesia.',
       body: '<p class="small muted">Cargando miembros…</p>',
       wide: true,
       actions: [{ label: 'Cerrar', class: 'ghost' }],
     });
+    const body = handle.el.querySelector('.modal-body');
+
+    let churchMembers = [];
+    let overrides = [];
+
+    function overrideFor(userId) {
+      return overrides.find((row) => row.user_id === userId) || null;
+    }
+
+    function rowHTML(member, override) {
+      const isSelf = member.user_id === Auth.user.id;
+      const disabled = isSelf && !Auth.isAdmin;
+      const label = member.email || 'Miembro';
+      const inherited = roleLabel(member.role);
+      const controls = override
+        ? roleOptions(override.role, !!Auth.isAdmin, disabled)
+          + '<button type="button" class="btn sm ghost" data-member-action="remove" data-member-id="' + U.esc(member.user_id) + '"' + (disabled ? ' disabled' : '') + '>Quitar del panel</button>'
+        : roleOptions('musico', !!Auth.isAdmin, disabled)
+          + '<button type="button" class="btn sm primary" data-member-action="add" data-member-id="' + U.esc(member.user_id) + '"' + (disabled ? ' disabled' : '') + '>Agregar al panel</button>';
+      return '<div class="member-role-row" data-member-id="' + U.esc(member.user_id) + '"'
+        + (override ? ' data-in-panel="1"' : '') + '>'
+        + '<div><strong>' + U.esc(label) + '</strong>'
+        + '<div class="tiny muted">Rol de iglesia: ' + U.esc(inherited) + (isSelf ? ' · vos' : '') + '</div></div>'
+        + '<div class="row wrap" style="gap:6px">' + controls + '</div>'
+        + '</div>';
+    }
+
+    function paint() {
+      const inPanel = churchMembers.filter((member) => overrideFor(member.user_id));
+      const available = churchMembers.filter((member) => !overrideFor(member.user_id));
+
+      body.innerHTML = '<p class="tiny muted">Un miembro del panel usa su rol del servicio aquí y hereda el de la iglesia en los demás. '
+        + 'Quitar del panel no lo saca de la iglesia.</p>'
+        + '<p class="tiny muted" style="margin-top:12px"><strong>En este panel</strong></p>'
+        + (inPanel.length
+          ? inPanel.map((member) => rowHTML(member, overrideFor(member.user_id))).join('')
+          : '<p class="small muted">Todavía no hay miembros asignados a este panel.</p>')
+        + '<p class="tiny muted" style="margin-top:14px"><strong>Agregar miembros de la iglesia</strong></p>'
+        + (available.length
+          ? available.map((member) => rowHTML(member, null)).join('')
+          : '<p class="small muted">Todos los miembros de la iglesia ya están en este panel.</p>');
+      bindActions();
+    }
+
+    function bindActions() {
+      body.querySelectorAll('[data-member-action]').forEach((button) => {
+        button.addEventListener('click', async () => {
+          const row = button.closest('.member-role-row');
+          const userId = row ? row.dataset.memberId : '';
+          const select = row ? row.querySelector('[data-member-role]') : null;
+          if (!userId || !select) return;
+          const adding = button.dataset.memberAction === 'add';
+          button.disabled = true;
+          select.disabled = true;
+          try {
+            if (adding) {
+              await Services.setMember(service.id, userId, select.value || 'musico');
+              UI.toast('Miembro agregado al panel');
+            } else {
+              await Services.removeMember(service.id, userId);
+              UI.toast('Miembro quitado del panel');
+            }
+            overrides = await Services.members(service.id);
+            paint();
+            refreshApp();
+          } catch (error) {
+            button.disabled = false;
+            select.disabled = false;
+            UI.toast(error.message, 'error');
+          }
+        });
+      });
+
+      body.querySelectorAll('[data-in-panel] [data-member-role]').forEach((select) => {
+        select.addEventListener('change', async () => {
+          const row = select.closest('.member-role-row');
+          const userId = row ? row.dataset.memberId : '';
+          if (!userId || select.disabled) return;
+          select.disabled = true;
+          try {
+            await Services.setMember(service.id, userId, select.value);
+            overrides = await Services.members(service.id);
+            paint();
+            refreshApp();
+          } catch (error) {
+            UI.toast(error.message, 'error');
+            select.disabled = false;
+          }
+        });
+      });
+    }
 
     try {
-      const [overrides, churchMembersResult] = await Promise.all([
+      const [overridesResult, churchMembersResult] = await Promise.all([
         Services.members(service.id),
         Auth.client.rpc('list_members', { p_church_id: churchId }),
       ]);
       if (churchMembersResult && churchMembersResult.error) throw churchMembersResult.error;
-      const churchMembers = Array.isArray(churchMembersResult && churchMembersResult.data)
+      churchMembers = Array.isArray(churchMembersResult && churchMembersResult.data)
         ? churchMembersResult.data : [];
-      const overridesById = new Map(overrides.map((row) => [row.user_id, row]));
-      const isChurchAdmin = !!Auth.isAdmin;
-
-      const rowsHTML = churchMembers.map((member) => {
-        const override = overridesById.get(member.user_id);
-        const isSelf = member.user_id === Auth.user.id;
-        const disabled = isSelf && !isChurchAdmin;
-        const inherited = roleLabel(member.role);
-        const label = member.email || 'Miembro';
-        return '<div class="member-role-row" data-member-id="' + U.esc(member.user_id) + '">'
-          + '<div><strong>' + U.esc(label) + '</strong>'
-          + '<div class="tiny muted">Rol de iglesia: ' + U.esc(inherited) + (isSelf ? ' · vos' : '') + '</div></div>'
-          + roleOptions(override ? override.role : '', disabled, 'Heredar (' + inherited + ')')
-          + '</div>';
-      }).join('');
-
-      handle.el.querySelector('.modal-body').innerHTML = rowsHTML
-        + '<p class="tiny muted" style="margin-top:12px">«Heredar» usa el rol de la iglesia. Solo un administrador de la iglesia puede asignar el rol de administrador.</p>';
-      const body = handle.el.querySelector('.modal-body');
-
-      body.addEventListener('change', (event) => {
-        const select = event.target.closest('[data-member-role]');
-        if (!select || select.disabled) return;
-        const row = select.closest('[data-member-id]');
-        const userId = row ? row.dataset.memberId : '';
-        const role = select.value;
-        const task = role
-          ? Services.setMember(service.id, userId, role)
-          : Services.removeMember(service.id, userId);
-        select.disabled = true;
-        task.then(() => {
-          UI.toast(role ? 'Rol del servicio actualizado' : 'Rol heredado de la iglesia');
-          handle.close();
-          refreshApp();
-        }).catch((error) => {
-          UI.toast(error.message, 'error');
-          select.disabled = false;
-        });
-      });
+      overrides = Array.isArray(overridesResult) ? overridesResult : [];
+      paint();
     } catch (error) {
-      const body = handle.el.querySelector('.modal-body');
-      if (body) body.innerHTML = '<p class="small" style="color:var(--danger)">No se pudieron cargar los miembros: '
+      body.innerHTML = '<p class="small" style="color:var(--danger)">No se pudieron cargar los miembros: '
         + U.esc(error && error.message ? error.message : String(error)) + '</p>';
     }
   }

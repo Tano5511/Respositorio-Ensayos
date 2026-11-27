@@ -720,6 +720,42 @@
     return state.memberships.slice();
   }
 
+  /* El usuario sale de una iglesia. La RPC impide salir si es el último
+     administrador; los datos de la iglesia no se borran. */
+  async function leaveChurch(churchId) {
+    if (!state.client || !state.user) throw new Error('Supabase no está configurado.');
+    const id = String(churchId || state.activeChurchId || '');
+    if (!id) return false;
+    if (!state.memberships.some((item) => item.church.id === id)) return false;
+
+    const { error } = await state.client.rpc('leave_church', { p_church_id: id });
+    if (error) throw error;
+
+    const wasActive = state.activeChurchId === id;
+    if (wasActive) clearActiveChurchData();
+    state.inviteCode = '';
+    await loadMemberships();
+
+    if (wasActive) {
+      state.activeChurchId = state.memberships.length ? state.memberships[0].church.id : null;
+      if (state.activeChurchId) {
+        storeChurchId(state.activeChurchId);
+      } else {
+        try { window.localStorage.removeItem(churchStorageKey()); } catch (ignored) { /* sin almacenamiento */ }
+      }
+    }
+
+    if (!state.memberships.length) {
+      state.addingChurch = false;
+      showGate('church');
+      emit('needs-church');
+    } else {
+      hideGate();
+      emit('ready');
+    }
+    return true;
+  }
+
   /* Actualiza el nombre de la iglesia activa en memoria, después de guardarlo
      en Supabase. No vuelve a descargar canciones ni repertorios. */
   function updateChurchName(name) {
@@ -820,6 +856,7 @@
       });
     },
     signOut,
+    leaveChurch,
     createChurch(name) {
       if (!state.client) return Promise.reject(new Error('Supabase no está configurado.'));
       return state.client.rpc('create_church', { p_name: name });
